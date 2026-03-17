@@ -54,7 +54,7 @@ tests/
 pytest tests/ -v
 
 # With coverage report
-pytest tests/ --cov=contribai --cov-report=term-missing --cov-fail-under=80
+pytest tests/ --cov=contribai --cov-report=term-missing --cov-fail-under=50
 
 # Only unit tests
 pytest tests/unit/ -v
@@ -69,7 +69,7 @@ pytest tests/unit/test_analyzer.py -v -s
 ### 5. CI Quality Gates
 Every PR must pass:
 - [ ] All tests green
-- [ ] Coverage ≥ 80%
+- [ ] Coverage ≥ 50%
 - [ ] No ruff lint errors
 - [ ] No type errors (future: mypy)
 

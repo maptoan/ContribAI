@@ -59,5 +59,6 @@ If a security issue is found:
 
 ## Files Owned
 - `contribai/analysis/analyzer.py` (security prompt section)
+- `contribai/analysis/strategies.py` (framework-specific security checks)
 - `SECURITY.md`
 - `.github/ISSUE_TEMPLATE/security-report.yml`

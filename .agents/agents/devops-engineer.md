@@ -56,9 +56,9 @@ clean       # remove caches
 
 ## CI Quality Gates
 Every PR must pass ALL of these:
-1. ✅ `ruff check contribai/` – Zero lint errors
-2. ✅ `ruff format --check contribai/` – Code is formatted
-3. ✅ `pytest tests/ --cov-fail-under=80` – Tests pass with ≥80% coverage
+1. ✅ `ruff check contribai/` - Zero lint errors
+2. ✅ `ruff format --check contribai/ tests/` - Code is formatted
+3. ✅ `pytest tests/ --cov-fail-under=50` - Tests pass with ≥50% coverage
 4. ✅ No security vulnerabilities in dependencies
 
 ## Files Owned

@@ -73,11 +73,12 @@ python -m twine upload dist/*
 ```
 
 11. **Create GitHub Release**
-Go to GitHub → Releases → New Release:
-- Tag: `vX.Y.Z`
-- Title: `ContribAI vX.Y.Z`
-- Body: Copy from CHANGELOG.md
-- Attach built artifacts
+```bash
+# Create release notes file from CHANGELOG.md for this version
+# then create the release via CLI:
+gh release create vX.Y.Z --title "vX.Y.Z - Release Title" --notes-file release_notes.md --latest
+```
+Mark this as the `--latest` release. Ensure title and notes match CHANGELOG.md content.
 
 ## Version Numbering (SemVer)
 - **MAJOR** (X): Breaking changes to CLI or config format

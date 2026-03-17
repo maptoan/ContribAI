@@ -46,7 +46,7 @@ raise ContribAIError("descriptive message", details={"key": "val"})
 ## Git Workflow
 1. Create feature branch: `git checkout -b feat/short-description`
 2. Write code + tests together
-3. Run `ruff check contribai/` and `ruff format contribai/` before commit
+3. Run `ruff check contribai/` and `ruff format contribai/ tests/` before commit
 4. Use conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`
 5. Push and create PR
 
@@ -57,7 +57,8 @@ raise ContribAIError("descriptive message", details={"key": "val"})
 - Tests go in `tests/test_<module>.py`
 
 ## Files Owned
-- `contribai/github/` – GitHub API integration
-- `contribai/analysis/` – Analysis engine
-- `contribai/generator/` – Contribution generator
-- `contribai/llm/` – LLM provider layer
+- `contribai/github/` - GitHub API integration
+- `contribai/analysis/` - Analysis engine & framework strategies
+- `contribai/generator/` - Contribution generator & quality scorer
+- `contribai/llm/` - LLM provider layer
+- `contribai/issues/` - Issue solver engine
