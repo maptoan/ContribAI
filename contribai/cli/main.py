@@ -88,7 +88,7 @@ def run(ctx, language, stars, max_prs, dry_run):
         console.print("Set it in config.yaml or run: contribai config set github.token <token>")
         sys.exit(1)
 
-    if not config.llm.api_key:
+    if not config.llm.api_key and not config.llm.use_vertex:
         console.print("[red]❌ LLM API key not configured![/red]")
         sys.exit(1)
 
@@ -126,7 +126,7 @@ def target(ctx, url, types, dry_run):
         console.print("[red]❌ GitHub token not configured![/red]")
         sys.exit(1)
 
-    if not config.llm.api_key:
+    if not config.llm.api_key and not config.llm.use_vertex:
         console.print("[red]❌ LLM API key not configured![/red]")
         sys.exit(1)
 
@@ -154,7 +154,7 @@ def analyze(ctx, url):
         console.print("[red]❌ GitHub token not configured![/red]")
         sys.exit(1)
 
-    if not config.llm.api_key:
+    if not config.llm.api_key and not config.llm.use_vertex:
         console.print("[red]❌ LLM API key not configured![/red]")
         sys.exit(1)
 
@@ -222,7 +222,7 @@ def solve(ctx, url, max_issues, dry_run):
         console.print("[red]❌ GitHub token not configured![/red]")
         sys.exit(1)
 
-    if not config.llm.api_key:
+    if not config.llm.api_key and not config.llm.use_vertex:
         console.print("[red]❌ LLM API key not configured![/red]")
         sys.exit(1)
 
@@ -572,6 +572,70 @@ def _print_result(result, dry_run: bool):
         console.print("\n[bold red]Errors:[/bold red]")
         for e in result.errors:
             console.print(f"  • {e}")
+
+
+@cli.command("models")
+@click.option("--task", default=None, help="Filter by task type")
+@click.pass_context
+def show_models(ctx, task):
+    """List available models and their capabilities."""
+    from contribai.llm.models import (
+        ALL_MODELS,
+        TaskType,
+        get_models_for_task,
+    )
+    from contribai.llm.router import TaskRouter
+
+    if task:
+        try:
+            tt = TaskType(task)
+        except ValueError:
+            console.print(
+                f"[red]Unknown task type: {task}[/red]\n"
+                f"Valid: {', '.join(t.value for t in TaskType)}"
+            )
+            return
+        models = get_models_for_task(tt)
+        console.print(f"\n[bold]Best models for [cyan]{task}[/cyan]:[/bold]\n")
+    else:
+        models = ALL_MODELS
+        console.print("\n[bold]Available Models:[/bold]\n")
+
+    table = Table()
+    table.add_column("Model", style="cyan")
+    table.add_column("Tier")
+    table.add_column("Code", justify="right")
+    table.add_column("Analysis", justify="right")
+    table.add_column("Speed", justify="right")
+    table.add_column("Cost (in/out)")
+    table.add_column("Best For")
+
+    for m in models:
+        tier_color = {
+            "pro": "red",
+            "flash": "yellow",
+            "lite": "green",
+        }.get(m.tier.value, "white")
+
+        table.add_row(
+            m.display_name,
+            f"[{tier_color}]{m.tier.value.upper()}[/{tier_color}]",
+            str(m.coding),
+            str(m.analysis),
+            str(m.speed),
+            f"${m.input_cost:.2f}/${m.output_cost:.2f}",
+            ", ".join(t.value for t in m.best_for[:3]),
+        )
+
+    console.print(table)
+
+    # Show default assignments
+    router = TaskRouter()
+    defaults = router.get_default_assignments()
+    console.print("\n[bold]Default Task Assignments:[/bold]")
+    for task_type, model_name in defaults.items():
+        console.print(f"  {task_type}: [cyan]{model_name}[/cyan]")
+    console.print()
 
 
 @cli.command("interactive")

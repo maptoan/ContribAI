@@ -52,7 +52,7 @@ class LLMConfig(BaseModel):
     base_url: str | None = None  # for ollama or custom endpoints
     # Vertex AI (Google Cloud)
     vertex_project: str = ""
-    vertex_location: str = "us-central1"
+    vertex_location: str = "global"
 
     @model_validator(mode="after")
     def resolve_api_key_and_defaults(self):
@@ -185,8 +185,17 @@ class NotificationConfig(BaseModel):
     on_run_complete: bool = True
 
 
+class MultiModelConfig(BaseModel):
+    """Multi-model routing configuration."""
+
+    enabled: bool = False
+    strategy: str = "balanced"  # performance | balanced | economy
+    # Per-task model overrides (task_type → model_name)
+    model_overrides: dict[str, str] = Field(default_factory=dict)
+
+
 class ContribAIConfig(BaseModel):
-    """Root configuration for ContribAI."""
+    """Root configuration for ContribAIConfig."""
 
     github: GitHubConfig = Field(default_factory=GitHubConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -199,6 +208,7 @@ class ContribAIConfig(BaseModel):
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
     quota: QuotaConfig = Field(default_factory=QuotaConfig)
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
+    multi_model: MultiModelConfig = Field(default_factory=MultiModelConfig)
 
 
 def load_config(path: str | Path | None = None) -> ContribAIConfig:

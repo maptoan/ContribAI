@@ -53,10 +53,21 @@ class TestCLIConfig:
 
 
 class TestCLINoToken:
-    def test_run_without_token_fails(self, runner):
+    def test_run_without_token_fails(self, runner, monkeypatch):
+        """Run without any token source should fail gracefully."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **kw: type("R", (), {"returncode": 1, "stdout": ""})(),
+        )
         result = runner.invoke(cli, ["run"])
         assert result.exit_code != 0 or "token" in result.output.lower()
 
-    def test_analyze_without_token_fails(self, runner):
+    def test_analyze_without_token_fails(self, runner, monkeypatch):
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **kw: type("R", (), {"returncode": 1, "stdout": ""})(),
+        )
         result = runner.invoke(cli, ["analyze", "https://github.com/test/repo"])
         assert result.exit_code != 0 or "token" in result.output.lower()
