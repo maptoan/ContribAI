@@ -172,7 +172,7 @@ class CodeAnalyzer:
             contributing = await self._github.get_contributing_guide(repo.owner, repo.name)
 
         # Fetch a sample of source files (up to 15 most important)
-        priority_files = self._prioritize_files(analyzable)[:15]
+        priority_files = self._prioritize_files(analyzable, tree)[:15]
         for node in priority_files:
             try:
                 content = await self._github.get_file_content(repo.owner, repo.name, node.path)
@@ -180,39 +180,223 @@ class CodeAnalyzer:
             except Exception as e:
                 logger.debug("Failed to fetch %s: %s", node.path, e)
 
+        # Detect project profile and style
+        profile = self._detect_project_profile(repo, tree, readme)
+        style_guide = self._build_style_guide(relevant_files)
+        coding_style = f"PROJECT PROFILE:\n{profile}\n\nSTYLE GUIDE:\n{style_guide}"
+
         return RepoContext(
             repo=repo,
             file_tree=tree,
             readme_content=readme,
             contributing_guide=contributing,
             relevant_files=relevant_files,
+            coding_style=coding_style,
         )
 
-    def _prioritize_files(self, files: list[FileNode]) -> list[FileNode]:
-        """Prioritize files for analysis (entry points, configs, core modules first)."""
-        priority_patterns = [
-            "main.py",
-            "app.py",
-            "index.ts",
-            "index.js",
-            "server.py",
-            "setup.py",
-            "pyproject.toml",
-            "package.json",
-            "config",
-            "settings",
-            "auth",
-            "security",
-        ]
+    def _detect_project_profile(
+        self,
+        repo: Repository,
+        tree: list[FileNode],
+        readme: str | None,
+    ) -> str:
+        """Detect project type, tech stack, and conventions from file tree.
 
-        def file_priority(node: FileNode) -> int:
-            name = node.path.lower()
-            for i, pattern in enumerate(priority_patterns):
-                if pattern in name:
-                    return i
-            return len(priority_patterns) + 1
+        Returns a concise profile string that helps LLM understand the codebase.
+        """
+        paths = {n.path.lower() for n in tree}
+        names = {n.path.rsplit("/", 1)[-1].lower() for n in tree}
 
-        return sorted(files, key=file_priority)
+        # Detect project type
+        project_type = "library"
+        if any(f in names for f in ("manage.py", "wsgi.py", "asgi.py")):
+            project_type = "web_app"
+        elif any(f in names for f in ("server.py", "api.py", "routes.py", "app.py")):
+            project_type = "api_server"
+        elif any(f in names for f in ("main.py", "__main__.py", "cli.py")):
+            if any("click" in p or "argparse" in p or "typer" in p for p in paths):
+                project_type = "cli_tool"
+        elif any(f in names for f in ("pipeline.py", "dag.py", "etl.py")):
+            project_type = "data_pipeline"
+
+        # Detect tech stack
+        stack: list[str] = []
+        stack_markers = {
+            "django": ["manage.py", "settings.py", "urls.py"],
+            "flask": ["flask"],
+            "fastapi": ["fastapi"],
+            "sqlalchemy": ["models.py", "alembic"],
+            "react": ["package.json", "jsx", "tsx"],
+            "pytest": ["conftest.py", "pytest.ini"],
+            "celery": ["celery.py", "tasks.py"],
+            "docker": ["dockerfile", "docker-compose.yml"],
+        }
+        for tech, markers in stack_markers.items():
+            if any(m in p for p in paths for m in markers):
+                stack.append(tech)
+
+        # Detect conventions
+        has_tests = any("test" in p for p in paths)
+        has_ci = any(
+            f in p for p in paths for f in (".github/workflows", ".gitlab-ci", "Jenkinsfile")
+        )
+        has_types = any("py.typed" in p or "types" in p for p in paths)
+        has_docs = any(f in p for p in paths for f in ("docs/", "doc/", "sphinx"))
+
+        return (
+            f"Type: {project_type}\n"
+            f"Language: {repo.language or 'unknown'}\n"
+            f"Stack: {', '.join(stack) if stack else 'minimal'}\n"
+            f"Tests: {'yes' if has_tests else 'no'}\n"
+            f"CI: {'yes' if has_ci else 'no'}\n"
+            f"Type hints: {'yes' if has_types else 'unknown'}\n"
+            f"Docs: {'yes' if has_docs else 'minimal'}"
+        )
+
+    def _build_style_guide(self, files: dict[str, str]) -> str:
+        """Extract coding conventions from sample files.
+
+        Examines actual code to detect naming, error handling, and import patterns.
+        Returns a concise style guide string.
+        """
+        if not files:
+            return "No source files available for style detection."
+
+        # Sample up to 3 Python files for style detection
+        py_files = [(p, c) for p, c in files.items() if p.endswith(".py") and len(c) > 100][:3]
+        if not py_files:
+            # Try other languages
+            code_files = [
+                (p, c)
+                for p, c in files.items()
+                if any(p.endswith(e) for e in (".js", ".ts", ".go", ".rs")) and len(c) > 100
+            ][:3]
+            if not code_files:
+                return "Could not detect style — no substantial source files."
+            py_files = code_files
+
+        # Analyze patterns
+        conventions: list[str] = []
+        all_code = "\n".join(c for _, c in py_files)
+
+        # Naming convention
+        if "snake_case" not in all_code and "camelCase" not in all_code:
+            import re
+
+            func_names = re.findall(r"def (\w+)", all_code)
+            if func_names:
+                snake = sum(1 for n in func_names if "_" in n)
+                camel = sum(1 for n in func_names if n != n.lower() and "_" not in n)
+                conventions.append(f"Naming: {'snake_case' if snake > camel else 'camelCase'}")
+
+        # Error handling style
+        if "raise" in all_code and "except" in all_code:
+            conventions.append("Errors: try/except with raise")
+        elif "Result" in all_code or "Ok(" in all_code:
+            conventions.append("Errors: Result type pattern")
+
+        # Docstring format
+        if '"""' in all_code:
+            if "Args:" in all_code:
+                conventions.append("Docstrings: Google style")
+            elif "Parameters" in all_code and "---" in all_code:
+                conventions.append("Docstrings: NumPy style")
+            elif ":param" in all_code:
+                conventions.append("Docstrings: Sphinx style")
+            else:
+                conventions.append("Docstrings: simple/minimal")
+        else:
+            conventions.append("Docstrings: rare/none")
+
+        # Import style
+        import re
+
+        abs_imports = len(re.findall(r"^from \w+\.\w+", all_code, re.MULTILINE))
+        rel_imports = len(re.findall(r"^from \.", all_code, re.MULTILINE))
+        if abs_imports + rel_imports > 0:
+            conventions.append(
+                f"Imports: {'absolute' if abs_imports > rel_imports else 'relative'}"
+            )
+
+        # Logging
+        if "logger" in all_code or "logging" in all_code:
+            conventions.append("Logging: stdlib logging")
+        elif "print(" in all_code:
+            conventions.append("Logging: print statements")
+
+        return "\n".join(conventions) if conventions else "Standard conventions"
+
+    def _prioritize_files(
+        self,
+        files: list[FileNode],
+        tree: list[FileNode] | None = None,
+    ) -> list[FileNode]:
+        """Prioritize files for analysis by contribution value.
+
+        Scores files based on:
+        - Core logic (not tests, vendored, generated, or configs)
+        - Size (medium-sized files are most useful)
+        - Location (shallow = more important)
+        """
+        # Dirs/patterns that indicate low-value files
+        skip_prefixes = (
+            "test",
+            "tests",
+            "spec",
+            "__pycache__",
+            "node_modules",
+            "vendor",
+            "dist",
+            "build",
+            ".git",
+            "migrations",
+            "generated",
+            "proto",
+            "stubs",
+        )
+
+        def file_score(node: FileNode) -> float:
+            path = node.path.lower()
+            name = path.rsplit("/", 1)[-1]
+            score = 50.0  # base score
+
+            # Boost entry points and core files
+            if name in ("main.py", "app.py", "server.py", "cli.py", "__main__.py"):
+                score += 40
+            elif name in ("api.py", "routes.py", "views.py", "handlers.py"):
+                score += 35
+            elif any(k in name for k in ("auth", "security", "middleware", "utils")):
+                score += 30
+            elif name in ("models.py", "schema.py", "types.py"):
+                score += 25
+            elif any(k in name for k in ("config", "settings")):
+                score += 20
+
+            # Penalize low-value files
+            parts = path.split("/")
+            if any(p.startswith(s) for p in parts for s in skip_prefixes):
+                score -= 60
+            if name.startswith("test_") or name.endswith("_test.py"):
+                score -= 50
+            if name in ("__init__.py", "conftest.py", "setup.py"):
+                score -= 20
+
+            # Prefer medium-sized files (200-2000 bytes = sweet spot)
+            if 200 <= node.size <= 2000:
+                score += 10
+            elif node.size > 10000:
+                score -= 5  # very large files are harder to analyze
+
+            # Prefer shallow paths (core modules, not deeply nested)
+            depth = len(parts)
+            if depth <= 2:
+                score += 15
+            elif depth >= 5:
+                score -= 10
+
+            return score
+
+        return sorted(files, key=file_score, reverse=True)
 
     async def _run_analyzer(self, name: str, context: RepoContext) -> list[Finding]:
         """Run a single LLM-powered analyzer."""
@@ -232,27 +416,44 @@ class CodeAnalyzer:
             return []
 
         prompt = prompt_fn(context)
+
+        # Build context-aware system prompt with project profile
+        profile_ctx = ""
+        if context.coding_style:
+            profile_ctx = (
+                f"\n\nCODEBASE CONTEXT (use this to calibrate your analysis):\n"
+                f"{context.coding_style}\n\n"
+                f"IMPORTANT: Only report issues relevant to this type of project. "
+                f"Skip issues that don't apply to the detected stack/type.\n"
+            )
+
         system = (
-            "You are an expert code analyst. Analyze the given repository and return findings "
-            "in a structured format. For each finding, provide:\n"
-            "- title: short descriptive title\n"
+            "You are a senior software engineer performing a focused code review. "
+            "You have deep expertise in real-world codebases and know which issues "
+            "actually matter vs which are noise.\n\n"
+            "For each finding, provide:\n"
+            "- title: short descriptive title (be specific, not generic)\n"
             "- severity: low|medium|high|critical\n"
             "- file_path: path to the affected file\n"
             "- line_start: approximate line number (or 0 if unknown)\n"
-            "- description: detailed explanation of the issue\n"
-            "- suggestion: how to fix it\n\n"
+            "- description: explain WHY this is a problem with concrete impact\n"
+            "- suggestion: exact code-level fix (not vague advice)\n\n"
             "Return findings as a YAML list. If no issues found, return 'findings: []'.\n\n"
-            "CRITICAL: Avoid false positives. Before reporting a finding:\n"
-            "1. Check if the code is ALREADY protected by error handling, "
-            "circuit breakers, try/catch, or fallback patterns\n"
-            "2. Check if collections/maps are BOUNDED by construction "
-            "(populated from static arrays, enums, configs, or hardcoded lists)\n"
-            "3. Consider the FULL call chain — a pattern that looks unsafe in isolation "
-            "may be safe when called from a protected context\n"
-            "4. Do NOT report issues where the existing code already handles the edge case\n"
-            "5. Do NOT report issues where the fix would add unnecessary complexity "
-            "without real benefit\n\n"
-            "Only report issues you are CONFIDENT are genuine problems."
+            f"{profile_ctx}"
+            "ANTI-FALSE-POSITIVE RULES (mandatory checks before reporting):\n"
+            "1. ALREADY HANDLED — Is the code already protected by try/except, "
+            "guards, or fallback patterns? If yes, do NOT report.\n"
+            "2. BY DESIGN — Is the pattern intentional? (e.g., bare except in a "
+            "daemon, hardcoded values in test fixtures). If yes, do NOT report.\n"
+            "3. BOUNDED CONTEXT — Does the call chain guarantee safety? "
+            "(e.g., dict access after `if key in dict`). If yes, do NOT report.\n"
+            "4. TRIVIAL FIX — Would the fix add complexity without real benefit? "
+            "(e.g., adding type hints to a 10-line script). If yes, do NOT report.\n"
+            "5. COSMETIC — Is this purely stylistic with no functional impact? "
+            "(e.g., prefer f-strings over .format()). If yes, do NOT report.\n\n"
+            "Report ONLY issues that a senior developer would actually fix in a PR review. "
+            "Quality over quantity — 1 genuine finding beats 5 false positives.\n"
+            "Maximum 3 findings per analyzer."
         )
 
         try:
@@ -268,36 +469,38 @@ class CodeAnalyzer:
             f"Analyze this {ctx.repo.language} repository for SECURITY vulnerabilities:\n\n"
             f"Repository: {ctx.repo.full_name}\n\n"
             f"{files_text}\n\n"
-            "Look for:\n"
-            "1. Hardcoded secrets/credentials/API keys\n"
-            "2. SQL injection vulnerabilities\n"
-            "3. XSS (Cross-Site Scripting) risks\n"
-            "4. Insecure deserialization\n"
-            "5. Path traversal vulnerabilities\n"
-            "6. Missing input validation\n"
-            "7. Insecure cryptography\n"
-            "8. Exposed sensitive data in logs\n"
-            "9. Missing authentication/authorization checks\n"
-            "10. CSRF vulnerabilities\n"
+            "Focus on vulnerabilities with REAL exploitability:\n"
+            "1. Hardcoded secrets/credentials (NOT test fixtures or placeholders)\n"
+            "2. SQL injection (only if raw queries are used, NOT ORM calls)\n"
+            "3. Command injection via unsanitized user input\n"
+            "4. Path traversal in file operations\n"
+            "5. Insecure deserialization (pickle, yaml.load without SafeLoader)\n"
+            "6. Missing authentication on sensitive endpoints\n\n"
+            "DO NOT report:\n"
+            "- Hardcoded values in test/fixture files\n"
+            "- Missing CSRF if the framework handles it (Django, etc.)\n"
+            "- Generic 'missing input validation' without a concrete attack vector\n"
+            "- Theoretical vulnerabilities that require physical access\n"
         )
 
     def _code_quality_prompt(self, ctx: RepoContext) -> str:
         files_text = self._format_files(ctx)
         return (
-            f"Analyze this {ctx.repo.language} repository for CODE QUALITY issues:\n\n"
+            f"Analyze this {ctx.repo.language} repository for CODE QUALITY bugs:\n\n"
             f"Repository: {ctx.repo.full_name}\n\n"
             f"{files_text}\n\n"
-            "Look for:\n"
-            "1. Missing error handling (bare excepts, unhandled errors)\n"
-            "2. Code duplication\n"
-            "3. Overly complex functions (high cyclomatic complexity)\n"
-            "4. Missing type hints/annotations\n"
-            "5. Dead/unreachable code\n"
-            "6. Performance anti-patterns (N+1 queries, unnecessary loops)\n"
-            "7. Missing resource cleanup (file handles, connections)\n"
-            "8. Inconsistent naming conventions\n"
-            "9. Magic numbers/strings\n"
-            "10. Missing or inadequate logging\n"
+            "Focus on issues that cause BUGS or CRASHES in production:\n"
+            "1. Unhandled None/null that will crash at runtime\n"
+            "2. Resource leaks (unclosed files, connections, cursors)\n"
+            "3. Race conditions in concurrent code\n"
+            "4. Off-by-one errors in loops or slices\n"
+            "5. Silent data corruption (wrong type coercion, truncation)\n"
+            "6. Missing error propagation (swallowed exceptions hiding failures)\n\n"
+            "DO NOT report:\n"
+            "- Missing type hints (unless the project uses them everywhere else)\n"
+            "- Code style preferences (naming, formatting)\n"
+            "- 'Could be refactored' without a concrete bug\n"
+            "- Missing logging (unless an error path silently fails)\n"
         )
 
     def _docs_prompt(self, ctx: RepoContext) -> str:
@@ -344,19 +547,17 @@ class CodeAnalyzer:
             f"Analyze this {ctx.repo.language} repository for PERFORMANCE issues:\n\n"
             f"Repository: {ctx.repo.full_name}\n\n"
             f"{files_text}\n\n"
-            "Look for:\n"
-            "1. N+1 query patterns (database calls inside loops)\n"
-            "2. Missing caching for expensive operations\n"
-            "3. Unnecessary synchronous I/O blocking the event loop\n"
-            "4. Inefficient data structures (list for lookups instead of set/dict)\n"
-            "5. Unnecessary re-renders in React/Vue components\n"
-            "6. Missing pagination for large data fetches\n"
-            "7. Unoptimized regex or string operations in hot paths\n"
-            "8. Memory leaks (unclosed resources, growing caches without eviction)\n"
-            "9. Redundant API calls or duplicate network requests\n"
-            "10. Missing lazy loading for heavy imports or large assets\n\n"
-            "Focus on issues that have measurable performance impact. "
-            "Avoid micro-optimizations that don't matter in practice.\n"
+            "Focus on issues with MEASURABLE impact (>10% improvement):\n"
+            "1. N+1 queries — database/API calls inside loops\n"
+            "2. Blocking I/O in async code — sync calls in event loop\n"
+            "3. O(n²) algorithms where O(n) or O(n log n) is possible\n"
+            "4. Memory leaks — growing collections without bounds\n"
+            "5. Repeated expensive computation that should be cached\n\n"
+            "DO NOT report:\n"
+            "- Micro-optimizations (f-string vs .format(), list comp vs loop)\n"
+            "- Theoretical perf issues in code that runs once at startup\n"
+            "- 'Could use caching' without evidence the operation is expensive\n"
+            "- String concatenation unless it's in a tight loop with large data\n"
         )
 
     def _refactor_prompt(self, ctx: RepoContext) -> str:

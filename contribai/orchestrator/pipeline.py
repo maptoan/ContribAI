@@ -520,6 +520,41 @@ class ContribPipeline:
             logger.info("No findings for %s", repo.full_name)
             return result
 
+        # --- Early finding filter (pre-generation) ---
+        # Filter out findings that target non-code files (blocked by SKIP_EXTENSIONS)
+        # or are irrelevant to the project type, BEFORE wasting LLM calls.
+        pre_filter_count = len(analysis.findings)
+        filtered = []
+        for f in analysis.findings:
+            fp = f.file_path or ""
+            ext = "." + fp.rsplit(".", 1)[-1].lower() if "." in fp else ""
+
+            # Skip findings on non-code files (would be blocked at commit anyway)
+            if ext in SKIP_EXTENSIONS:
+                logger.debug("⏭️ Pre-filter: skip non-code file %s", fp)
+                continue
+
+            # Skip findings on protected meta files
+            basename = fp.rsplit("/", 1)[-1] if "/" in fp else fp
+            if basename.upper() in PROTECTED_META_FILES:
+                logger.debug("⏭️ Pre-filter: skip protected file %s", fp)
+                continue
+
+            filtered.append(f)
+
+        if len(filtered) < pre_filter_count:
+            logger.info(
+                "🔍 Pre-filter: %d → %d findings (removed %d non-code targets)",
+                pre_filter_count,
+                len(filtered),
+                pre_filter_count - len(filtered),
+            )
+            analysis.findings = filtered
+
+        if not analysis.findings:
+            logger.info("All findings filtered (non-code targets) for %s", repo.full_name)
+            return result
+
         logger.info(
             "Found %d issues (analyzed %d files in %.1fs)",
             len(analysis.findings),

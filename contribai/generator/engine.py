@@ -98,19 +98,40 @@ class ContributionGenerator:
             return None
 
     def _build_system_prompt(self, context: RepoContext) -> str:
-        """Build system prompt with repository context."""
+        """Build system prompt with repository context and style awareness."""
         repo_context = build_repo_context_prompt(context, max_tokens=4000)
+
+        # Inject style guide if available
+        style_section = ""
+        if context.coding_style:
+            style_section = (
+                "\n\nCODEBASE STYLE (learned from this repository):\n"
+                f"{context.coding_style}\n\n"
+                "You MUST match these conventions exactly. Do not introduce "
+                "your own style preferences. Your changes should look like "
+                "they were written by the same developer who wrote the rest "
+                "of the codebase.\n"
+            )
+
         return (
-            "You are an expert open-source contributor. You generate high-quality, "
-            "production-ready code changes that follow the target repository's coding "
-            "conventions and best practices.\n\n"
-            "IMPORTANT RULES:\n"
-            "- Match the existing code style exactly (indentation, naming, patterns)\n"
-            "- Make minimal, focused changes that fix exactly one issue\n"
-            "- Include proper error handling\n"
-            "- Do NOT break existing functionality\n"
-            "- Do NOT add unnecessary dependencies\n"
-            "- Write clear, self-documenting code\n\n"
+            "You are a senior open-source contributor who writes production-ready "
+            "code. You understand that PRs are judged by maintainers who value "
+            "minimal, focused, and convention-matching changes.\n\n"
+            "RULES FOR GENERATING CHANGES:\n"
+            "1. Match existing code style EXACTLY (indentation, naming, patterns)\n"
+            "2. Make the SMALLEST change that correctly fixes the issue\n"
+            "3. Include proper error handling consistent with the codebase\n"
+            "4. Do NOT break existing functionality\n"
+            "5. Do NOT add unnecessary dependencies or imports\n"
+            "6. Do NOT refactor adjacent code — fix only the reported issue\n"
+            "7. Do NOT add comments explaining what the code does (self-documenting)\n"
+            "8. Do NOT modify files unrelated to the finding\n\n"
+            "MAINTAINER ACCEPTANCE CRITERIA:\n"
+            "- Would a busy maintainer merge this in under 30 seconds?\n"
+            "- Is the change obviously correct with no side effects?\n"
+            "- Does it follow the project's established patterns?\n"
+            "- Is it genuinely useful (not busywork or cosmetic)?\n"
+            f"{style_section}\n"
             f"REPOSITORY CONTEXT:\n{repo_context}"
         )
 
