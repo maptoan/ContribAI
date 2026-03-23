@@ -1,4 +1,5 @@
 """Unit tests for PR Patrol engine."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -11,7 +12,6 @@ from contribai.pr.patrol import (
     REVIEW_BOT_LOGINS,
     PRPatrol,
 )
-
 
 # ── Test constants ─────────────────────────────────────────────────────────
 
