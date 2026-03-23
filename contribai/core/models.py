@@ -241,6 +241,7 @@ class FeedbackItem(BaseModel):
     line: int | None = None
     diff_hunk: str | None = None
     is_inline: bool = False  # True = code review comment, False = issue comment
+    bot_context: str | None = None  # Original bot review context when human replies to bot
 
 
 class PatrolResult(BaseModel):

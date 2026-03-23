@@ -287,6 +287,25 @@ class PRPatrol:
         # Inline review comments (code-specific)
         try:
             review_comments = await self._github.get_pr_review_comments(owner, repo, pr_number)
+
+            # Build index of bot comments for context lookup
+            bot_index: dict[int, dict] = {}
+            for c in review_comments:
+                login = c.get("user", {}).get("login", "")
+                is_bot = (
+                    login.lower() in REVIEW_BOT_LOGINS
+                    or login.endswith("[bot]")
+                    or c.get("user", {}).get("type") == "Bot"
+                )
+                if is_bot:
+                    bot_index[c["id"]] = {
+                        "author": login,
+                        "body": c.get("body", ""),
+                        "file_path": c.get("path"),
+                        "line": c.get("line") or c.get("original_line"),
+                        "diff_hunk": c.get("diff_hunk"),
+                    }
+
             for c in review_comments:
                 login = c.get("user", {}).get("login", "")
                 body = c.get("body", "")
@@ -298,15 +317,31 @@ class PRPatrol:
                 if any(marker in body for marker in OUR_REPLY_MARKERS):
                     continue
 
+                # If this comment replies to a bot, attach bot's review as context
+                bot_context = None
+                reply_to = c.get("in_reply_to_id")
+                if reply_to and reply_to in bot_index:
+                    bot = bot_index[reply_to]
+                    bot_context = f"[Bot review by @{bot['author']}]\n{bot['body']}"
+                    # Inherit file_path/line/diff_hunk from bot if human comment lacks them
+                    file_path = c.get("path") or bot.get("file_path")
+                    line = c.get("line") or c.get("original_line") or bot.get("line")
+                    diff_hunk = c.get("diff_hunk") or bot.get("diff_hunk")
+                else:
+                    file_path = c.get("path")
+                    line = c.get("line") or c.get("original_line")
+                    diff_hunk = c.get("diff_hunk")
+
                 feedback.append(
                     {
                         "id": c["id"],
                         "author": login,
                         "body": body,
                         "is_inline": True,
-                        "file_path": c.get("path"),
-                        "line": c.get("line") or c.get("original_line"),
-                        "diff_hunk": c.get("diff_hunk"),
+                        "file_path": file_path,
+                        "line": line,
+                        "diff_hunk": diff_hunk,
+                        "bot_context": bot_context,
                         "created_at": c.get("created_at", ""),
                     }
                 )
@@ -436,6 +471,7 @@ class PRPatrol:
                     line=f.get("line"),
                     diff_hunk=f.get("diff_hunk"),
                     is_inline=f["is_inline"],
+                    bot_context=f.get("bot_context"),
                 )
             )
 
@@ -481,7 +517,7 @@ class PRPatrol:
 
             # Generate fix via LLM
             prompt = self._build_fix_prompt(feedback, file_content, file_path, diff)
-            response = await self._llm.generate(
+            response = await self._llm.complete(
                 prompt,
                 system=(
                     "You are a developer fixing code based on a PR review comment. "
@@ -550,6 +586,13 @@ class PRPatrol:
     ) -> str:
         """Build the LLM prompt to generate a code fix."""
         parts = [f"A reviewer left this feedback on a pull request:\n\n> {feedback.body}"]
+
+        if feedback.bot_context:
+            parts.append(
+                f"\nThis comment was in reply to a bot code review that said:"
+                f"\n```\n{feedback.bot_context[:3000]}\n```"
+                f"\nUse the bot's analysis to understand what needs fixing."
+            )
 
         if feedback.diff_hunk:
             parts.append(f"\nThe feedback is on this code section:\n```\n{feedback.diff_hunk}\n```")
