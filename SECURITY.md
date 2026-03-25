@@ -4,14 +4,17 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | ✅        |
+| 2.4.x   | ✅ Active |
+| 2.3.x   | ✅        |
+| 2.0.x – 2.2.x | ⚠️ Security fixes only |
+| < 2.0   | ❌        |
 
 ## Reporting a Vulnerability
 
 If you discover a security vulnerability, please report it responsibly:
 
 1. **DO NOT** create a public GitHub issue for security vulnerabilities
-2. Email: **security@contribai.dev** (or use GitHub Security Advisories)
+2. Email: **security@contribai.dev** (or use [GitHub Security Advisories](https://github.com/tang-vu/ContribAI/security/advisories))
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce
@@ -30,6 +33,7 @@ ContribAI handles sensitive data:
 - **LLM API Keys** – Stored in `config.yaml` (gitignored)
 - **LLM Outputs** – Treated as untrusted data, sanitized before use
 - **Repository Code** – Fetched via API, processed in memory
+- **PR Outcomes** – Stored locally in SQLite database
 
 ### What We Do
 - Config files with secrets are in `.gitignore`
@@ -37,3 +41,12 @@ ContribAI handles sensitive data:
 - LLM output is parsed with try/except, never `eval()`'d
 - GitHub tokens use minimal required scopes
 - Rate limiting prevents API abuse
+- DCO signoff on all commits via GitHub API
+- Middleware chain validates and gates every pipeline action
+
+### Architecture Security (v2.4.0)
+- **Middleware chain** — RateLimit and Validation middlewares run before any processing
+- **Quality gate** — QualityGateMiddleware blocks low-scoring contributions
+- **Retry with backoff** — RetryMiddleware prevents retry-based abuse
+- **Outcome memory** — Learns from rejected PRs to avoid repeating mistakes
+- **Tool protocol** — All external interactions go through typed Tool interface

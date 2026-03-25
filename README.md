@@ -76,14 +76,26 @@ ContribAI discovers open source repositories, analyzes them for improvement oppo
 ## Architecture
 
 ```
-Discovery → Analysis → Validation → Generation → Quality Gate → PR → CI Monitor
-    │           │           │            │            │           │        │
-    ▼           ▼           ▼            ▼            ▼           ▼        ▼
- GitHub    7 Analyzers  LLM deep     LLM-based    7-check     Fork+    Auto-close
- Search    + Language   validate     code gen     scorer     Branch    on CI fail
- + Hunt    + Framework  false pos.   + self-rev   + Quotas   +Commit   + CLA sign
- + Webhooks + Plugins  + cross-file  + tests     + Policy   +PR       + Monitor
+                     Middleware Chain
+ Discovery → [RateLimit → Validation → Retry → DCO → QualityGate]
+     │                                  │
+     ▼                                  ▼
+  GitHub         ┌──────────Sub-Agent Registry──────────┐
+  Search         │  Analyzer │ Generator │ Patrol │ Compliance │
+  + Hunt         └────┬──────────┬──────────┬────────┬──┘
+  + Webhooks          │          │          │        │
+                 ┌────▼────┐ ┌───▼───┐ ┌───▼───┐ ┌─▼──┐
+                 │ Skills  │ │  LLM  │ │GitHub │ │DCO │
+                 │(17 on-  │ │+ Tool │ │+ Tool │ │Sign│
+                 │ demand) │ │Protocol│ │       │ │off │
+                 └────┬────┘ └───┬───┘ └───┬───┘ └─┬──┘
+                      └──────────┴─────────┴───────┘
+                                  │
+                          Outcome Memory (SQLite)
+                          6 tables + learning
 ```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
 
 ## Installation
 
@@ -207,26 +219,33 @@ my_analyzer = "my_package:MyAnalyzer"
 
 ```
 contribai/
-├── core/              # Config, models, exceptions, quotas, profiles
+├── core/              # Config, models, middleware chain
 ├── llm/               # Multi-provider LLM (Gemini, OpenAI, Anthropic, Ollama, Vertex)
 ├── github/            # GitHub API client, repo discovery, guidelines
-├── analysis/          # 7 analyzers + language rules + framework strategies
+├── analysis/          # 7 analyzers + progressive skill loading (17 skills)
+├── agents/            # Sub-agent registry (Analyzer, Generator, Patrol, Compliance)
+├── tools/             # MCP-inspired tool protocol (GitHubTool, LLMTool)
 ├── generator/         # Contribution generator + self-review + quality scorer
 ├── issues/            # Issue-driven contribution solver
-├── pr/                # PR lifecycle manager + CLA handler
-├── orchestrator/      # Pipeline orchestrator, hunt mode, persistent memory
+├── pr/                # PR lifecycle manager + patrol + CLA handler
+├── orchestrator/      # Pipeline orchestrator, hunt mode, outcome memory
 ├── notifications/     # Slack, Discord, Telegram notifications
 ├── plugins/           # Plugin system (analyzer/generator extensions)
 ├── templates/         # Contribution templates (5 built-in YAML)
 ├── scheduler/         # APScheduler cron-based automation
 ├── web/               # FastAPI dashboard, auth, webhooks
 └── cli/               # Rich CLI + interactive TUI
+
+docs/
+└── ARCHITECTURE.md    # Detailed architecture documentation
+
+AGENTS.md              # AI agent guide (for Copilot, Claude, Coderabbit, etc.)
 ```
 
 ## Testing
 
 ```bash
-pytest tests/ -v                  # Run all 213 tests
+pytest tests/ -v                  # Run all 247 tests
 pytest tests/ -v --cov=contribai  # With coverage
 ruff check contribai/             # Lint
 ruff format contribai/            # Format

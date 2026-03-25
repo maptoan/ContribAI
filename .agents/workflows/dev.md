@@ -18,14 +18,27 @@ description: ContribAI development workflow - code, patrol, hunt, and release
    ```bash
    pytest tests/ -q --tb=short --cov=contribai --cov-fail-under=50
    ```
-4. Commit with conventional commits:
+4. Commit with conventional commits + DCO signoff:
    ```bash
-   git add -A && git commit -m "feat|fix|refactor: description"
+   git add -A && git commit -s -m "feat|fix|refactor: description"
    ```
 5. Push and verify CI:
    ```bash
    git push origin main
    ```
+
+## Architecture (v2.4.0)
+
+Key modules to know:
+
+| Module | Purpose |
+|--------|---------|
+| `core/middleware.py` | Pipeline middleware chain (RateLimit, Validation, Retry, DCO, QualityGate) |
+| `analysis/skills.py` | 17 progressive analysis skills + framework detection |
+| `agents/registry.py` | Sub-agent registry (Analyzer, Generator, Patrol, Compliance) |
+| `tools/protocol.py` | MCP-inspired tool protocol (GitHubTool, LLMTool) |
+| `orchestrator/memory.py` | SQLite persistence + outcome learning (pr_outcomes, repo_preferences) |
+| `analysis/analyzer.py` | Code analysis + context summarization |
 
 ## PR Patrol
 
@@ -52,9 +65,14 @@ contribai patrol
 All commits via GitHub API automatically include `Signed-off-by:` trailer.
 Configured via `github.dco_signoff: true` in `config.yaml`.
 
-If a repo requires DCO and existing commits lack signoff:
+**IMPORTANT**: When fixing DCO on existing PRs, do NOT use `git rebase --signoff` on branches
+with merge commits — it flattens the history. Instead:
 ```bash
-git rebase HEAD~N --signoff
+# Safe approach: reset to upstream and reapply
+git fetch upstream
+git reset --hard upstream/master
+# Apply changes manually
+git commit -s -m "fix: description"
 git push --force-with-lease origin <branch>
 ```
 
@@ -77,12 +95,18 @@ contribai hunt --rounds 1 --repos 5 --dry-run
 
 1. Bump version in `contribai/__init__.py` and `pyproject.toml`
 2. Update `CHANGELOG.md` with new version section
-3. Commit and push
-4. Create release:
+3. Update `README.md` badges (version, test count)
+4. Update `AGENTS.md` if architecture changed
+5. Commit and push:
+   ```bash
+   git add -A && git commit -s -m "feat: release vX.Y.Z"
+   git push origin main
+   ```
+6. Create release:
    ```bash
    gh release create v<VERSION> --repo tang-vu/ContribAI --title "v<VERSION> - Title" --generate-notes
    ```
-5. Verify all CI checks pass
+7. Verify all CI checks pass
 
 ## Config Reference
 
@@ -97,6 +121,12 @@ github:
 llm:
   provider: gemini
   model: gemini-2.5-flash
+
+analysis:
+  enabled_analyzers:         # Only load needed analyzers
+    - security
+    - code_quality
+    - performance
 
 contribution:
   commit_convention: conventional
