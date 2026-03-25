@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -11,20 +10,14 @@ from contribai.agents.registry import (
     AgentContext,
     AgentRegistry,
     AgentRole,
-    AnalyzerAgent,
-    ComplianceAgent,
-    GeneratorAgent,
     IssueSolverAgent,
-    PatrolAgent,
     create_default_registry,
 )
 from contribai.core.middleware import (
     DCOMiddleware,
     MiddlewareChain,
     PipelineContext,
-    QualityGateMiddleware,
     RateLimitMiddleware,
-    RetryMiddleware,
     ValidationMiddleware,
     build_default_chain,
 )
@@ -32,7 +25,6 @@ from contribai.tools.protocol import (
     GitHubTool,
     LLMTool,
     ToolRegistry,
-    ToolResult,
     create_default_tools,
 )
 

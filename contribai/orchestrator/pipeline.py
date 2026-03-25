@@ -10,10 +10,10 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
-from contribai.analysis.analyzer import CodeAnalyzer
 from contribai.agents.registry import create_default_registry
+from contribai.analysis.analyzer import CodeAnalyzer
 from contribai.core.config import ContribAIConfig
-from contribai.core.middleware import MiddlewareChain, PipelineContext, build_default_chain
+from contribai.core.middleware import build_default_chain
 from contribai.core.models import (
     AnalysisResult,
     DiscoveryCriteria,

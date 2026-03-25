@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from contribai.analysis.analyzer import CodeAnalyzer
 from contribai.core.models import ContributionType, Finding, Severity
 

@@ -1070,9 +1070,9 @@ def notify_test(ctx):
     console.print("[green]Test notification sent![/green]")
 
 
-@cli.command()
+@cli.command("system-status")
 @click.pass_context
-def status(ctx):
+def sysinfo(ctx):
     """Show ContribAI system status — memory, PRs, rate limits."""
     print_banner()
 
