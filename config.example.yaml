@@ -68,6 +68,7 @@ storage:
 pipeline:
   max_concurrent_repos: 3         # parallel repo processing
   timeout_per_repo_sec: 300
+  human_review: false              # true = pause for approval before each PR
 
 scheduler:
   enabled: false

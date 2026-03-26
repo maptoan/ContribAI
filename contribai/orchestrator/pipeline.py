@@ -28,6 +28,7 @@ from contribai.github.guidelines import fetch_repo_guidelines
 from contribai.issues.solver import IssueSolver
 from contribai.llm.provider import create_llm_provider
 from contribai.orchestrator.memory import Memory
+from contribai.orchestrator.review_gate import HumanReviewer
 from contribai.pr.manager import PRManager
 from contribai.tools.protocol import create_default_tools
 
@@ -108,6 +109,7 @@ class ContribPipeline:
         self._middleware_chain: list = []
         self._agent_registry = None
         self._tool_registry = None
+        self._reviewer: HumanReviewer | None = None
 
     async def _init_components(self):
         """Initialize all pipeline components."""
@@ -176,6 +178,14 @@ class ContribPipeline:
             "Tool registry: %d tools loaded",
             len(self._tool_registry.list_tools()),
         )
+
+        # Human review gate
+        if self.config.pipeline.human_review:
+            self._reviewer = HumanReviewer()
+            logger.info("🔍 Human review gate: ENABLED")
+        else:
+            self._reviewer = HumanReviewer(auto_approve=True)
+            logger.debug("Human review gate: disabled (auto-approve)")
 
     async def _cleanup(self):
         """Clean up resources."""
@@ -756,6 +766,15 @@ class ContribPipeline:
 
             if dry_run:
                 logger.info("🏃 [DRY RUN] Would create PR: %s", contribution.title)
+                continue
+
+            # Human review gate
+            decision = await self._reviewer.review(contribution, finding, repo.full_name)
+            if decision.rejected:
+                logger.info("❌ Human rejected: %s", contribution.title)
+                continue
+            if decision.skipped:
+                logger.info("⏭️ Human skipped: %s", contribution.title)
                 continue
 
             # Create PR
