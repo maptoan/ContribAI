@@ -472,10 +472,85 @@ async def _get_stats(args: dict) -> list[types.TextContent]:
     )
 
 async def _patrol_prs(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    mem = await get_memory()
+    gh = await get_github()
+    open_prs = await mem.get_prs(status="open", limit=100)
+    if not open_prs:
+        return _ok(prs_checked=0, reviews_list=[])
+
+    reviews_list = []
+    for pr in open_prs:
+        repo = pr["repo"]
+        pr_number = pr["pr_number"]
+        pr_url = pr.get("pr_url", "")
+        try:
+            owner, repo_name = repo.split("/", 1)
+            # Issue comments (general PR comments)
+            comments = await gh.get_pr_comments(owner, repo_name, pr_number)
+            for c in comments:
+                reviews_list.append({
+                    "pr_number": pr_number,
+                    "repo": repo,
+                    "pr_url": pr_url,
+                    "comment_author": c.get("user", {}).get("login", ""),
+                    "comment_body": c.get("body", ""),
+                    "is_inline": False,
+                    "file_path": None,
+                })
+            # Inline review comments
+            inline = await gh.get_pr_review_comments(owner, repo_name, pr_number)
+            for c in inline:
+                reviews_list.append({
+                    "pr_number": pr_number,
+                    "repo": repo,
+                    "pr_url": pr_url,
+                    "comment_author": c.get("user", {}).get("login", ""),
+                    "comment_body": c.get("body", ""),
+                    "is_inline": True,
+                    "file_path": c.get("path"),
+                })
+        except Exception as e:
+            logger.warning("Failed to fetch comments for %s#%d: %s", repo, pr_number, e)
+
+    return _ok(prs_checked=len(open_prs), reviews_list=reviews_list)
+
 
 async def _cleanup_forks(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    dry_run = args.get("dry_run", True)
+    gh = await get_github()
+    mem = await get_memory()
+
+    forks = await gh.list_user_forks()
+    forks_to_delete = []
+    forks_kept = []
+
+    # Get all submitted PRs and group by fork field
+    all_prs = await mem.get_prs(limit=10000)
+    prs_by_fork: dict[str, list[dict]] = {}
+    for pr in all_prs:
+        fork_field = pr.get("fork", "")
+        if fork_field:
+            prs_by_fork.setdefault(fork_field, []).append(pr)
+
+    for fork in forks:
+        fork_name = fork["full_name"]
+        prs = prs_by_fork.get(fork_name, [])
+        has_open = any(p.get("status") == "open" for p in prs)
+        if prs and not has_open:
+            forks_to_delete.append(fork_name)
+        else:
+            forks_kept.append(fork_name)
+
+    if not dry_run:
+        for fork_name in forks_to_delete:
+            try:
+                owner, repo_name = fork_name.split("/", 1)
+                await gh.delete_repository(owner, repo_name)
+                logger.info("Deleted fork %s", fork_name)
+            except Exception as e:
+                logger.warning("Failed to delete %s: %s", fork_name, e)
+
+    return _ok(forks_to_delete=forks_to_delete, forks_kept=forks_kept, dry_run=dry_run)
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────

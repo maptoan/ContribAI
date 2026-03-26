@@ -333,3 +333,62 @@ class TestGetStats:
         data = _text(result)
         assert data["prs_submitted"] == 5
         assert data["merge_rate"] == "60%"
+
+
+class TestPatrolPRs:
+    @pytest.mark.asyncio
+    async def test_returns_review_list(self):
+        from contribai.mcp_server import _patrol_prs
+        open_pr = {"repo": "owner/repo", "pr_number": 7, "pr_url": "https://github.com/owner/repo/pull/7"}
+        with patch("contribai.mcp_server.get_memory") as mock_get_mem:
+            mem = AsyncMock()
+            mem.get_prs = AsyncMock(return_value=[open_pr])
+            mock_get_mem.return_value = mem
+            with patch("contribai.mcp_server.get_github") as mock_get_gh:
+                gh = AsyncMock()
+                gh.get_pr_comments = AsyncMock(return_value=[
+                    {"user": {"login": "maintainer"}, "body": "Please add tests", "id": 1}
+                ])
+                gh.get_pr_review_comments = AsyncMock(return_value=[])
+                mock_get_gh.return_value = gh
+                result = await _patrol_prs({"dry_run": True})
+        data = _text(result)
+        assert data["prs_checked"] == 1
+        assert len(data["reviews_list"]) == 1
+        assert data["reviews_list"][0]["comment_author"] == "maintainer"
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_open_prs(self):
+        from contribai.mcp_server import _patrol_prs
+        with patch("contribai.mcp_server.get_memory") as mock_get_mem:
+            mem = AsyncMock()
+            mem.get_prs = AsyncMock(return_value=[])
+            mock_get_mem.return_value = mem
+            result = await _patrol_prs({})
+        data = _text(result)
+        assert data["prs_checked"] == 0
+        assert data["reviews_list"] == []
+
+
+class TestCleanupForks:
+    @pytest.mark.asyncio
+    async def test_dry_run_lists_but_does_not_delete(self):
+        from contribai.mcp_server import _cleanup_forks
+        fork_data = {"full_name": "me/old-fork"}
+        # PRs stored with fork="me/old-fork" (the fork column in submitted_prs)
+        all_prs = [
+            {"fork": "me/old-fork", "status": "merged", "repo": "upstream/repo", "pr_number": 1}
+        ]
+        with patch("contribai.mcp_server.get_github") as mock_get_gh:
+            gh = AsyncMock()
+            gh.list_user_forks = AsyncMock(return_value=[fork_data])
+            gh.delete_repository = AsyncMock()
+            mock_get_gh.return_value = gh
+            with patch("contribai.mcp_server.get_memory") as mock_get_mem:
+                mem = AsyncMock()
+                mem.get_prs = AsyncMock(return_value=all_prs)
+                mock_get_mem.return_value = mem
+                result = await _cleanup_forks({"dry_run": True})
+        data = _text(result)
+        assert "me/old-fork" in data["forks_to_delete"]
+        gh.delete_repository.assert_not_called()
