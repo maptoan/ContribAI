@@ -33,18 +33,15 @@ ContribAI discovers open source repositories, analyzes them for improvement oppo
 - **Duplicate prevention** – Title similarity matching prevents duplicate PRs
 - **Post-PR CI monitoring** – Auto-closes PRs that fail CI checks
 
-### Stealth Mode (v1.0.0)
-- **Human-like PRs** – No AI branding, clean PR body format
-- **CLA auto-signing** – Detects CLAAssistant/EasyCLA and auto-signs
+### Resilience & Safety (v2.0.0)
 - **AI policy detection** – Skips repos that ban AI-generated contributions
+- **CLA auto-signing** – Detects CLAAssistant/EasyCLA and auto-signs
 - **Smart validation** – Deep finding validation reduces false positives
 - **Rate limiting** – Max 2 findings per repo to avoid spamming
-
-### Resilience & Safety (v2.0.0)
 - **API retry with backoff** – Auto-retries on 502/503/504 errors (3 attempts, exponential backoff)
 - **Code-only modifications** – Skips `.md`, `.yaml`, `.json`, `.toml` and meta files (LICENSE, CONTRIBUTING.md)
 - **Fork cleanup** – `contribai cleanup` removes stale forks with no open PRs
-- **Parallel hunt** – Process up to 10 repos concurrently with configurable semaphore
+- **Clean PR format** – Professional PR body, no unnecessary boilerplate
 
 ### PR Patrol (v2.2.0+)
 - **Review monitoring** – Scans open PRs for maintainer feedback and auto-responds
