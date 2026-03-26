@@ -361,19 +361,68 @@ async def _get_open_issues(args: dict) -> list[types.TextContent]:
     ])
 
 async def _fork_repo(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    gh = await get_github()
+    fork = await gh.fork_repository(args["owner"], args["repo"])
+    return _ok(fork_full_name=fork.full_name)
+
 
 async def _create_branch(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    gh = await get_github()
+    ref = await gh.create_branch(
+        args["fork_owner"], args["repo"], args["branch_name"],
+        from_branch=args.get("from_branch"),
+    )
+    return _ok(ref=ref.get("ref", ""))
+
 
 async def _push_file_change(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    gh = await get_github()
+    result = await gh.create_or_update_file(
+        owner=args["fork_owner"],
+        repo=args["repo"],
+        path=args["path"],
+        content=args["content"],
+        message=args["commit_msg"],
+        branch=args["branch"],
+        sha=args.get("sha"),
+    )
+    return _ok(
+        commit_sha=result.get("commit", {}).get("sha", ""),
+        content_url=result.get("content", {}).get("html_url", ""),
+    )
+
 
 async def _create_pr(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    gh = await get_github()
+    mem = await get_memory()
+    pr_data = await gh.create_pull_request(
+        owner=args["owner"],
+        repo=args["repo"],
+        title=args["title"],
+        body=args["body"],
+        head=args["head_branch"],
+        base=args.get("base_branch"),
+    )
+    pr_number = pr_data["number"]
+    pr_url = pr_data["html_url"]
+    # Record to memory so status/duplicate checks work
+    await mem.record_pr(
+        repo=f"{args['owner']}/{args['repo']}",
+        pr_number=pr_number,
+        pr_url=pr_url,
+        title=args["title"],
+        pr_type="mcp",
+    )
+    return _ok(pr_number=pr_number, pr_url=pr_url)
+
 
 async def _close_pr(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    gh = await get_github()
+    try:
+        await gh.close_pull_request(args["owner"], args["repo"], args["pr_number"])
+        return _ok(success=True)
+    except Exception as e:
+        return _ok(success=False, reason=str(e))
 
 async def _check_duplicate_pr(args: dict) -> list[types.TextContent]:
     return _err("not implemented")

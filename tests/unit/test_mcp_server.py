@@ -160,3 +160,104 @@ class TestGetOpenIssues:
         assert "issues" in data
         assert data["issues"][0]["number"] == 1
         assert data["issues"][0]["labels"] == ["bug"]
+
+
+class TestForkRepo:
+    @pytest.mark.asyncio
+    async def test_returns_fork_name(self):
+        from contribai.mcp_server import _fork_repo
+        fork = MagicMock(full_name="me/upstream-repo")
+        with patch("contribai.mcp_server.get_github") as mock_get_gh:
+            gh = AsyncMock()
+            gh.fork_repository = AsyncMock(return_value=fork)
+            mock_get_gh.return_value = gh
+            result = await _fork_repo({"owner": "upstream", "repo": "upstream-repo"})
+        data = _text(result)
+        assert data["fork_full_name"] == "me/upstream-repo"
+
+
+class TestCreateBranch:
+    @pytest.mark.asyncio
+    async def test_returns_branch_ref(self):
+        from contribai.mcp_server import _create_branch
+        with patch("contribai.mcp_server.get_github") as mock_get_gh:
+            gh = AsyncMock()
+            gh.create_branch = AsyncMock(return_value={"ref": "refs/heads/fix-typo"})
+            mock_get_gh.return_value = gh
+            result = await _create_branch(
+                {"fork_owner": "me", "repo": "r", "branch_name": "fix-typo"}
+            )
+        data = _text(result)
+        assert data["ref"] == "refs/heads/fix-typo"
+
+
+class TestPushFileChange:
+    @pytest.mark.asyncio
+    async def test_returns_commit_sha(self):
+        from contribai.mcp_server import _push_file_change
+        with patch("contribai.mcp_server.get_github") as mock_get_gh:
+            gh = AsyncMock()
+            gh.create_or_update_file = AsyncMock(return_value={
+                "commit": {"sha": "abc123"},
+                "content": {"html_url": "https://github.com/me/r/blob/fix-typo/README.md"},
+            })
+            mock_get_gh.return_value = gh
+            result = await _push_file_change({
+                "fork_owner": "me", "repo": "r", "branch": "fix-typo",
+                "path": "README.md", "content": "# Fixed", "commit_msg": "fix: typo"
+            })
+        data = _text(result)
+        assert data["commit_sha"] == "abc123"
+        assert "README.md" in data["content_url"]
+
+
+class TestCreatePR:
+    @pytest.mark.asyncio
+    async def test_returns_pr_info(self):
+        from contribai.mcp_server import _create_pr
+        with patch("contribai.mcp_server.get_github") as mock_get_gh:
+            gh = AsyncMock()
+            gh.create_pull_request = AsyncMock(return_value={"number": 42, "html_url": "https://github.com/owner/repo/pull/42"})
+            mock_get_gh.return_value = gh
+            with patch("contribai.mcp_server.get_memory") as mock_get_mem:
+                mem = AsyncMock()
+                mock_get_mem.return_value = mem
+                result = await _create_pr({
+                    "owner": "owner", "repo": "repo",
+                    "title": "fix: typo", "body": "Fixed a typo",
+                    "head_branch": "me:fix-typo",
+                })
+        data = _text(result)
+        assert data["pr_number"] == 42
+        assert "pull/42" in data["pr_url"]
+        mem.record_pr.assert_called_once_with(
+            repo="owner/repo",
+            pr_number=42,
+            pr_url="https://github.com/owner/repo/pull/42",
+            title="fix: typo",
+            pr_type="mcp",
+        )
+
+
+class TestClosePR:
+    @pytest.mark.asyncio
+    async def test_returns_success_true(self):
+        from contribai.mcp_server import _close_pr
+        with patch("contribai.mcp_server.get_github") as mock_get_gh:
+            gh = AsyncMock()
+            gh.close_pull_request = AsyncMock(return_value=None)
+            mock_get_gh.return_value = gh
+            result = await _close_pr({"owner": "o", "repo": "r", "pr_number": 1})
+        data = _text(result)
+        assert data["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_returns_success_false_on_error(self):
+        from contribai.mcp_server import _close_pr
+        with patch("contribai.mcp_server.get_github") as mock_get_gh:
+            gh = AsyncMock()
+            gh.close_pull_request = AsyncMock(side_effect=Exception("API error"))
+            mock_get_gh.return_value = gh
+            result = await _close_pr({"owner": "o", "repo": "r", "pr_number": 99})
+        data = _text(result)
+        assert data["success"] is False
