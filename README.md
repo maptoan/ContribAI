@@ -11,9 +11,9 @@
 
 | Metric | Count |
 |--------|-------|
-| **PRs Submitted** | 79 |
-| **PRs Merged** | 54 |
-| **Repos Contributed** | 25 |
+| **PRs Submitted** | 34+ |
+| **PRs Merged** | 9 |
+| **Repos Contributed** | 21 |
 | **Notable Repos** | Flask, Pandas, Maigret, Marimo, s-tui |
 
 > Set it up once, wake up to merged PRs. See the [**Hall of Fame →**](HALL_OF_FAME.md)
@@ -190,7 +190,7 @@ my_analyzer = "my_package:MyAnalyzer"
 
 | Doc | Description |
 |-----|-------------|
-| [`HALL_OF_FAME.md`](HALL_OF_FAME.md) | **54 merged PRs** across 25 repos — real results |
+| [`HALL_OF_FAME.md`](HALL_OF_FAME.md) | **9 merged PRs** across 21 repos — real results |
 | [`system-architecture.md`](docs/system-architecture.md) | Pipeline, middleware, events, LLM routing |
 | [`code-standards.md`](docs/code-standards.md) | Conventions, patterns, testing |
 | [`deployment-guide.md`](docs/deployment-guide.md) | Install, Docker, config, CLI reference |
