@@ -4,14 +4,14 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-416%20passed-brightgreen)](#testing)
-[![Version](https://img.shields.io/badge/version-4.0.0-blue)](https://github.com/tang-vu/ContribAI/releases)
+[![Tests](https://img.shields.io/badge/tests-431%20passed-brightgreen)](#testing)
+[![Version](https://img.shields.io/badge/version-4.1.0-blue)](https://github.com/tang-vu/ContribAI/releases)
 
 ### 🏆 Results
 
 | Metric | Count |
 |--------|-------|
-| **PRs Submitted** | 34+ |
+| **PRs Submitted** | 43+ |
 | **PRs Merged** | 9 |
 | **Repos Contributed** | 21 |
 | **Notable Repos** | Worldmonitor (45k⭐), Maigret (19k⭐), AI-Research-SKILLs (6k⭐), s-tui (5k⭐) |
@@ -58,7 +58,7 @@ contribai run --dry-run     # Preview without creating PRs
 | **LLM** | Gemini, OpenAI, Anthropic, Ollama, Vertex AI — smart task routing across model tiers |
 | **Hunt Mode** | Multi-round autonomous hunting, cross-file fixes, inter-repo delay |
 | **PR Patrol** | Monitors PRs for review feedback, auto-responds and pushes code fixes |
-| **MCP Server** | 14 tools for Claude Desktop via stdio protocol |
+| **MCP Server** | 14 tools for Claude Desktop + Antigravity IDE via stdio protocol |
 | **Safety** | AI policy detection, CLA auto-signing, quality gate, duplicate prevention |
 | **Platform** | Web dashboard, scheduler, webhooks, Docker, profiles, plugins |
 | **Notifications** | Slack, Discord, Telegram with retry |
@@ -146,7 +146,7 @@ docker compose up -d dashboard scheduler  # Dashboard + scheduler
 ## Testing
 
 ```bash
-pytest tests/ -v                    # Run all 416 tests
+pytest tests/ -v                    # Run all 431 tests
 pytest tests/ -v --cov=contribai    # With coverage
 ruff check contribai/               # Lint
 ruff format contribai/              # Format
@@ -173,9 +173,11 @@ class MyAnalyzer(AnalyzerPlugin):
 my_analyzer = "my_package:MyAnalyzer"
 ```
 
-**MCP** — Use ContribAI from Claude Desktop:
+**MCP** — Use ContribAI from Claude Desktop or Antigravity IDE:
 
 ```json
+// Claude Desktop: ~/.config/claude/claude_desktop_config.json
+// Antigravity IDE: ~/.gemini/antigravity/mcp_config.json
 {
   "mcpServers": {
     "contribai": {

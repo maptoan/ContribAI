@@ -705,17 +705,17 @@ class ContributionGenerator:
                 scope=scope,
             )
 
-        # Default: emoji format
+        # Default: clean text format (no emoji in PR title)
         type_labels = {
-            ContributionType.SECURITY_FIX: "🔒 Security",
-            ContributionType.CODE_QUALITY: "✨ Quality",
-            ContributionType.DOCS_IMPROVE: "📝 Docs",
-            ContributionType.UI_UX_FIX: "🎨 UI/UX",
-            ContributionType.PERFORMANCE_OPT: "⚡ Performance",
-            ContributionType.FEATURE_ADD: "🚀 Feature",
-            ContributionType.REFACTOR: "♻️ Refactor",
+            ContributionType.SECURITY_FIX: "Security",
+            ContributionType.CODE_QUALITY: "Quality",
+            ContributionType.DOCS_IMPROVE: "Docs",
+            ContributionType.UI_UX_FIX: "UI/UX",
+            ContributionType.PERFORMANCE_OPT: "Performance",
+            ContributionType.FEATURE_ADD: "Feature",
+            ContributionType.REFACTOR: "Refactor",
         }
-        label = type_labels.get(finding.type, "🔧 Fix")
+        label = type_labels.get(finding.type, "Fix")
         return f"{label}: {finding.title}"
 
     async def _self_review(self, contribution: Contribution, context: RepoContext) -> bool:

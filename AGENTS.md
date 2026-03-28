@@ -23,10 +23,10 @@ It is itself an AI agent that operates on other GitHub repositories.
 | GitHub | REST API v3 (via httpx) |
 | Web | FastAPI + uvicorn |
 | CLI | Typer + Rich |
-| Tests | pytest (400+ tests) |
+| Tests | pytest (431 tests) |
 | Lint | ruff |
 
-## Architecture (v4.0.0)
+## Architecture (v4.1.0)
 
 ### Core Pipeline
 ```

@@ -211,17 +211,17 @@ def adapt_pr_title(
         else:
             return f"{cc_type}: {finding_title.lower()}"
 
-    # Default: use ContribAI emoji format
+    # Default: clean text format (no emoji in PR title)
     type_labels = {
-        "security_fix": "🔒 Security",
-        "code_quality": "✨ Quality",
-        "docs_improve": "📝 Docs",
-        "ui_ux_fix": "🎨 UI/UX",
-        "performance_opt": "⚡ Performance",
-        "feature_add": "🚀 Feature",
-        "refactor": "♻️ Refactor",
+        "security_fix": "Security",
+        "code_quality": "Quality",
+        "docs_improve": "Docs",
+        "ui_ux_fix": "UI/UX",
+        "performance_opt": "Performance",
+        "feature_add": "Feature",
+        "refactor": "Refactor",
     }
-    label = type_labels.get(contribution_type, "🔧 Fix")
+    label = type_labels.get(contribution_type, "Fix")
     return f"{label}: {finding_title}"
 
 

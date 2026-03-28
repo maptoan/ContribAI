@@ -437,11 +437,20 @@ class PRManager:
         # Fix title format
         if "conventional commit" in all_comments or "needs:title" in all_comments:
             new_title = contribution.title
+            # Check if title uses default format (e.g., "Quality: ...")
+            # and repo requires conventional commits
+            default_prefixes = [
+                "Security:",
+                "Quality:",
+                "Docs:",
+                "UI/UX:",
+                "Performance:",
+                "Feature:",
+                "Refactor:",
+                "Fix:",
+            ]
             if (
-                any(
-                    new_title.startswith(prefix)
-                    for prefix in ["🔒", "✨", "📝", "🎨", "⚡", "🚀", "♻️", "🔧"]
-                )
+                any(new_title.startswith(prefix) for prefix in default_prefixes)
                 and guidelines
                 and guidelines.has_guidelines
             ):

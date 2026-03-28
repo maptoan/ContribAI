@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-03-29
+
+### Added
+- **Antigravity MCP Integration**: ContribAI MCP server now works with Antigravity IDE (Google Gemini) in addition to Claude Desktop — configure via `mcp_config.json` for native tool access to all 14 GitHub operations
+- Documented MCP setup for both Claude Desktop and Antigravity IDE
+
+### Changed
+- **PR Title Format**: Removed emoji prefixes from generated PR titles for a cleaner, more professional appearance (`"Quality: fix race condition"` instead of `"✨ Quality: fix race condition"`)
+- Updated compliance checker to match new non-emoji title format
+- Updated stats: 43 PRs submitted, 9 merged, 21 repos (184⭐)
+
 ## [4.0.0] - 2026-03-28
 
 ### Added

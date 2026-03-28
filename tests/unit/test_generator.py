@@ -78,7 +78,7 @@ class TestGenerateBranchName:
 class TestGeneratePRTitle:
     def test_security_title(self, generator, security_finding):
         title = generator._generate_pr_title(security_finding)
-        assert "🔒" in title
+        assert "Security:" in title
         assert "Hardcoded API key" in title
 
     def test_docs_title(self, generator):
@@ -90,7 +90,7 @@ class TestGeneratePRTitle:
             file_path="docs/api.md",
         )
         title = generator._generate_pr_title(finding)
-        assert "📝" in title
+        assert "Docs:" in title
 
 
 class TestParseChanges:
