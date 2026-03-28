@@ -14,7 +14,7 @@
 | **PRs Submitted** | 34+ |
 | **PRs Merged** | 9 |
 | **Repos Contributed** | 21 |
-| **Notable Repos** | Maigret (10k⭐), Worldmonitor (45k⭐), s-tui (4k⭐) |
+| **Notable Repos** | Worldmonitor (45k⭐), Maigret (19k⭐), AI-Research-SKILLs (6k⭐), s-tui (5k⭐) |
 
 > Set it up once, wake up to merged PRs. See the [**Hall of Fame →**](HALL_OF_FAME.md)
 

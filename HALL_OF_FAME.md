@@ -8,7 +8,7 @@
 
 These are notable merged PRs on well-known open source projects:
 
-### [soxoj/maigret](https://github.com/soxoj/maigret) — OSINT username checker (10k+ ⭐)
+### [soxoj/maigret](https://github.com/soxoj/maigret) — OSINT username checker (19k+ ⭐)
 
 | PR | Description |
 |----|-------------|
@@ -16,7 +16,7 @@ These are notable merged PRs on well-known open source projects:
 | [#2285](https://github.com/soxoj/maigret/pull/2285) | Fix: Missing exception handling in async operations |
 | [#2283](https://github.com/soxoj/maigret/pull/2283) | Quality: Improve error handling in site checker |
 
-### [amanusk/s-tui](https://github.com/amanusk/s-tui) — Terminal CPU monitoring (4k+ ⭐)
+### [amanusk/s-tui](https://github.com/amanusk/s-tui) — Terminal CPU monitoring (5k+ ⭐)
 
 | PR | Description |
 |----|-------------|
@@ -36,7 +36,7 @@ These are notable merged PRs on well-known open source projects:
 | [#1826](https://github.com/koala73/worldmonitor/pull/1826) | Security: Input sanitization improvements |
 | [#1824](https://github.com/koala73/worldmonitor/pull/1824) | Quality: Add missing exception handling |
 
-### [Orchestra-Research/AI-Research-SKILLs](https://github.com/Orchestra-Research/AI-Research-SKILLs) — AI research tools
+### [Orchestra-Research/AI-Research-SKILLs](https://github.com/Orchestra-Research/AI-Research-SKILLs) — AI research tools (6k+ ⭐)
 
 | PR | Description |
 |----|-------------|
@@ -50,10 +50,10 @@ ContribAI has submitted pull requests to the following 21 repositories:
 |------------|-------|--------|
 | [pallets/flask](https://github.com/pallets/flask) | 69k+ | Submitted |
 | [pandas-dev/pandas](https://github.com/pandas-dev/pandas) | 44k+ | Submitted |
-| [soxoj/maigret](https://github.com/soxoj/maigret) | 10k+ | ✅ 3 Merged |
+| [soxoj/maigret](https://github.com/soxoj/maigret) | 19k+ | ✅ 3 Merged |
 | [marimo-team/marimo](https://github.com/marimo-team/marimo) | 10k+ | Submitted |
 | [sindresorhus/eslint-plugin-unicorn](https://github.com/sindresorhus/eslint-plugin-unicorn) | 4k+ | Submitted |
-| [amanusk/s-tui](https://github.com/amanusk/s-tui) | 4k+ | ✅ Merged |
+| [amanusk/s-tui](https://github.com/amanusk/s-tui) | 5k+ | ✅ Merged |
 | [astral-sh/ty](https://github.com/astral-sh/ty) | 3k+ | Submitted |
 | [tinyhttp/tinyhttp](https://github.com/tinyhttp/tinyhttp) | 2k+ | Submitted |
 | [lepture/mistune](https://github.com/lepture/mistune) | 2k+ | Submitted |
@@ -68,7 +68,7 @@ ContribAI has submitted pull requests to the following 21 repositories:
 | [sansan0/TrendRadar](https://github.com/sansan0/TrendRadar) | — | Submitted |
 | [anomalyco/opencode](https://github.com/anomalyco/opencode) | — | Submitted |
 | [radixark/miles](https://github.com/radixark/miles) | — | Submitted |
-| [Orchestra-Research/AI-Research-SKILLs](https://github.com/Orchestra-Research/AI-Research-SKILLs) | — | ✅ Merged |
+| [Orchestra-Research/AI-Research-SKILLs](https://github.com/Orchestra-Research/AI-Research-SKILLs) | 6k+ | ✅ Merged |
 
 ---
 
