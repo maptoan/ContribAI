@@ -37,6 +37,14 @@ class LLMRateLimitError(LLMError):
     """LLM rate limit exceeded."""
 
 
+class LLMKeyPoolExhausted(LLMError):  # noqa: N818
+    """All Gemini API keys are cooling down or disabled."""
+
+    def __init__(self, message: str, *, next_ready_at: float | None = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.next_ready_at = next_ready_at  # epoch seconds, optional hint
+
+
 class AnalysisError(ContribAIError):
     """Code analysis failure."""
 

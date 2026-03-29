@@ -6,12 +6,21 @@ the same async interface for easy swapping.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
-from contribai.core.exceptions import LLMError, LLMRateLimitError
+from contribai.core.exceptions import LLMError, LLMKeyPoolExhausted, LLMRateLimitError
 from contribai.core.retry import rate_limit_retry
+from contribai.llm.key_pool import (
+    GeminiClientCache,
+    GeminiErrorKind,
+    KeyPool,
+    classify_gemini_error,
+)
 
 if TYPE_CHECKING:
     from contribai.core.config import LLMConfig
@@ -30,6 +39,20 @@ class LLMProvider(ABC):
         self.model = config.model
         self.temperature = config.temperature
         self.max_tokens = config.max_tokens
+        self._llm_spacing_lock = asyncio.Lock()
+        self._llm_spacing_last: float = 0.0
+
+    async def _llm_spacing_wait(self) -> None:
+        """Serializes LLM calls globally for this provider instance to cap burst RPM."""
+        interval = float(getattr(self.config, "min_request_interval_sec", 0.0) or 0.0)
+        if interval <= 0:
+            return
+        async with self._llm_spacing_lock:
+            now = time.monotonic()
+            gap = self._llm_spacing_last + interval - now
+            if gap > 0:
+                await asyncio.sleep(gap)
+            self._llm_spacing_last = time.monotonic()
 
     @abstractmethod
     async def complete(
@@ -65,6 +88,10 @@ class GeminiProvider(LLMProvider):
 
     Supports both API key auth and Vertex AI (Google Cloud).
     Set vertex_project in config to use Vertex AI.
+
+    With ``llm.key_pool.enabled`` or multiple entries in ``llm.api_keys`` (plus
+    optional ``llm.api_key``), uses a rotating key pool with cooldowns and optional
+    JSON state under ``llm.key_pool.state_path``.
     """
 
     def __init__(self, config: LLMConfig):
@@ -72,24 +99,231 @@ class GeminiProvider(LLMProvider):
         try:
             from google import genai
 
-            if config.use_vertex:
-                self._client = genai.Client(
-                    vertexai=True,
-                    project=config.vertex_project,
-                    location=config.vertex_location,
-                )
-                logger.info(
-                    "Gemini via Vertex AI (project=%s, location=%s)",
-                    config.vertex_project,
-                    config.vertex_location,
-                )
-            else:
-                self._client = genai.Client(api_key=config.api_key)
-                logger.info("Gemini via API key")
+            self._genai = genai
         except ImportError as e:
             raise LLMError("google-genai package not installed") from e
 
+        self._pool: KeyPool | None = None
+        self._client_cache: GeminiClientCache | None = None
+        self._client: Any = None
+
+        merged = config.merged_gemini_api_keys()
+        use_pool = (
+            not config.use_vertex and (config.key_pool.enabled or len(merged) > 1) and bool(merged)
+        )
+
+        if config.use_vertex:
+            self._client = self._genai.Client(
+                vertexai=True,
+                project=config.vertex_project,
+                location=config.vertex_location,
+            )
+            logger.info(
+                "Gemini via Vertex AI (project=%s, location=%s)",
+                config.vertex_project,
+                config.vertex_location,
+            )
+        elif use_pool:
+            self._pool = KeyPool(merged, config.key_pool)
+            self._client_cache = GeminiClientCache(config.key_pool.client_cache_size)
+            logger.info(
+                "Gemini via API key pool (%d keys, max_rotations=%d)",
+                len(merged),
+                config.key_pool.max_rotations_per_request,
+            )
+        elif merged:
+            self._client = self._genai.Client(api_key=merged[0])
+            logger.info("Gemini via single API key")
+        else:
+            self._client = self._genai.Client(api_key=config.api_key)
+            logger.info("Gemini via API key (config fallback)")
+
+    def _sync_generate_simple(
+        self,
+        client: Any,
+        *,
+        prompt: str,
+        system: str | None,
+        temperature: float,
+        max_tok: int,
+        use_model: str,
+    ) -> str:
+        from google.genai import types
+
+        cfg = types.GenerateContentConfig(
+            system_instruction=system,
+            temperature=temperature,
+            max_output_tokens=max_tok,
+        )
+        response = client.models.generate_content(
+            model=use_model,
+            contents=prompt,
+            config=cfg,
+        )
+        return response.text or ""
+
+    def _sync_generate_chat(
+        self,
+        client: Any,
+        *,
+        messages: list[dict[str, str]],
+        system: str | None,
+        temperature: float,
+        max_tok: int,
+        use_model: str,
+    ) -> str:
+        from google.genai import types
+
+        contents = []
+        for msg in messages:
+            role = "model" if msg["role"] == "assistant" else "user"
+            contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
+
+        cfg = types.GenerateContentConfig(
+            system_instruction=system,
+            temperature=temperature,
+            max_output_tokens=max_tok,
+        )
+        response = client.models.generate_content(
+            model=use_model,
+            contents=contents,
+            config=cfg,
+        )
+        return response.text or ""
+
+    def _map_gemini_exception(self, e: Exception) -> None:
+        """Raise LLMRateLimitError / LLMError for single-client retry path."""
+        error_msg = str(e).lower()
+        if "rate" in error_msg or "quota" in error_msg or "429" in error_msg:
+            raise LLMRateLimitError(f"Gemini rate limit: {e}") from e
+        raise LLMError(f"Gemini error: {e}") from e
+
+    async def _run_with_pool(
+        self,
+        *,
+        mode: str,
+        prompt: str | None,
+        messages: list[dict[str, str]] | None,
+        system: str | None,
+        temperature: float,
+        max_tok: int,
+        use_model: str,
+    ) -> str:
+        assert self._pool is not None and self._client_cache is not None
+        last_exc: Exception | None = None
+        for _attempt in range(self._pool.max_rotations_per_request):
+            await self._llm_spacing_wait()
+            rec = await self._pool.pick()
+            if rec is None:
+                msg, nxt = self._pool.exhausted_message()
+                raise LLMKeyPoolExhausted(
+                    f"No eligible Gemini API keys (cooling down or disabled). {msg}",
+                    next_ready_at=nxt,
+                )
+            sem = self._pool.semaphore_for(rec)
+            await sem.acquire()
+            try:
+
+                def _make_client_factory(key: str) -> Callable[[], Any]:
+                    def _factory() -> Any:
+                        return self._genai.Client(api_key=key)
+
+                    return _factory
+
+                client = self._client_cache.get(rec.key_id, _make_client_factory(rec.api_key))
+                try:
+                    if mode == "complete":
+                        text = await asyncio.to_thread(
+                            self._sync_generate_simple,
+                            client,
+                            prompt=prompt or "",
+                            system=system,
+                            temperature=temperature,
+                            max_tok=max_tok,
+                            use_model=use_model,
+                        )
+                    else:
+                        text = await asyncio.to_thread(
+                            self._sync_generate_chat,
+                            client,
+                            messages=list(messages or []),
+                            system=system,
+                            temperature=temperature,
+                            max_tok=max_tok,
+                            use_model=use_model,
+                        )
+                except Exception as e:
+                    classified = classify_gemini_error(e)
+                    await self._pool.apply_failure(rec, classified)
+                    last_exc = e
+                    if classified.kind == GeminiErrorKind.UNKNOWN:
+                        raise LLMError(f"Gemini error: {e}") from e
+                    continue
+                await self._pool.mark_success(rec)
+                return text
+            finally:
+                sem.release()
+
+        raise LLMKeyPoolExhausted(
+            "Exceeded Gemini key pool max_rotations_per_request without success.",
+            next_ready_at=None,
+        ) from last_exc
+
     @rate_limit_retry
+    async def _single_complete(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        model: str | None = None,
+    ) -> str:
+        await self._llm_spacing_wait()
+        temp = temperature if temperature is not None else self.temperature
+        max_tok = max_tokens if max_tokens is not None else self.max_tokens
+        use_model = model or self.model
+        try:
+            return self._sync_generate_simple(
+                self._client,
+                prompt=prompt,
+                system=system,
+                temperature=temp,
+                max_tok=max_tok,
+                use_model=use_model,
+            )
+        except Exception as e:
+            self._map_gemini_exception(e)
+
+    @rate_limit_retry
+    async def _single_chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        system: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        model: str | None = None,
+    ) -> str:
+        await self._llm_spacing_wait()
+        temp = temperature if temperature is not None else self.temperature
+        max_tok = max_tokens if max_tokens is not None else self.max_tokens
+        use_model = model or self.model
+        try:
+            return self._sync_generate_chat(
+                self._client,
+                messages=messages,
+                system=system,
+                temperature=temp,
+                max_tok=max_tok,
+                use_model=use_model,
+            )
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "rate" in error_msg or "quota" in error_msg or "429" in error_msg:
+                raise LLMRateLimitError(f"Gemini rate limit: {e}") from e
+            raise LLMError(f"Gemini chat error: {e}") from e
+
     async def complete(
         self,
         prompt: str,
@@ -99,31 +333,27 @@ class GeminiProvider(LLMProvider):
         max_tokens: int | None = None,
         model: str | None = None,
     ) -> str:
-        from google.genai import types
-
         temp = temperature if temperature is not None else self.temperature
         max_tok = max_tokens if max_tokens is not None else self.max_tokens
         use_model = model or self.model
-
-        try:
-            config = types.GenerateContentConfig(
-                system_instruction=system,
+        if self._pool is not None:
+            return await self._run_with_pool(
+                mode="complete",
+                prompt=prompt,
+                messages=None,
+                system=system,
                 temperature=temp,
-                max_output_tokens=max_tok,
+                max_tok=max_tok,
+                use_model=use_model,
             )
-            response = self._client.models.generate_content(
-                model=use_model,
-                contents=prompt,
-                config=config,
-            )
-            return response.text or ""
-        except Exception as e:
-            error_msg = str(e).lower()
-            if "rate" in error_msg or "quota" in error_msg or "429" in error_msg:
-                raise LLMRateLimitError(f"Gemini rate limit: {e}") from e
-            raise LLMError(f"Gemini error: {e}") from e
+        return await self._single_complete(
+            prompt,
+            system=system,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            model=model,
+        )
 
-    @rate_limit_retry
     async def chat(
         self,
         messages: list[dict[str, str]],
@@ -133,34 +363,26 @@ class GeminiProvider(LLMProvider):
         max_tokens: int | None = None,
         model: str | None = None,
     ) -> str:
-        from google.genai import types
-
         temp = temperature if temperature is not None else self.temperature
         max_tok = max_tokens if max_tokens is not None else self.max_tokens
         use_model = model or self.model
-
-        try:
-            contents = []
-            for msg in messages:
-                role = "model" if msg["role"] == "assistant" else "user"
-                contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
-
-            config = types.GenerateContentConfig(
-                system_instruction=system,
+        if self._pool is not None:
+            return await self._run_with_pool(
+                mode="chat",
+                prompt=None,
+                messages=messages,
+                system=system,
                 temperature=temp,
-                max_output_tokens=max_tok,
+                max_tok=max_tok,
+                use_model=use_model,
             )
-            response = self._client.models.generate_content(
-                model=use_model,
-                contents=contents,
-                config=config,
-            )
-            return response.text or ""
-        except Exception as e:
-            error_msg = str(e).lower()
-            if "rate" in error_msg or "quota" in error_msg or "429" in error_msg:
-                raise LLMRateLimitError(f"Gemini rate limit: {e}") from e
-            raise LLMError(f"Gemini chat error: {e}") from e
+        return await self._single_chat(
+            messages,
+            system=system,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            model=model,
+        )
 
 
 # ── OpenAI ─────────────────────────────────────────────────────────────────────
@@ -196,6 +418,7 @@ class OpenAIProvider(LLMProvider):
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> str:
+        await self._llm_spacing_wait()
         temp = temperature if temperature is not None else self.temperature
         max_tok = max_tokens if max_tokens is not None else self.max_tokens
 
@@ -248,6 +471,7 @@ class AnthropicProvider(LLMProvider):
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> str:
+        await self._llm_spacing_wait()
         temp = temperature if temperature is not None else self.temperature
         max_tok = max_tokens if max_tokens is not None else self.max_tokens
 
@@ -305,6 +529,7 @@ class OllamaProvider(LLMProvider):
         max_tokens: int | None = None,
         **kwargs,
     ) -> str:
+        await self._llm_spacing_wait()
         temp = temperature if temperature is not None else self.temperature
 
         all_messages = list(messages)

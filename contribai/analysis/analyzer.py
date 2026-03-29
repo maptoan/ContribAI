@@ -104,13 +104,18 @@ class CodeAnalyzer:
         # Build repo context
         context = await self._build_context(repo, file_tree, analyzable)
 
-        # Run enabled analyzers
+        # Run enabled analyzers (bounded concurrency to reduce LLM RPM bursts)
         all_findings: list[Finding] = []
-        analyzer_tasks = []
+        cap = max(1, int(getattr(self._config, "max_concurrent_analyzers", 2) or 1))
+        sem = asyncio.Semaphore(cap)
 
-        for analyzer_name in self._config.enabled_analyzers:
-            analyzer_tasks.append(self._run_analyzer(analyzer_name, context))
+        async def _run_guards(name: str) -> list[Finding]:
+            async with sem:
+                return await self._run_analyzer(name, context)
 
+        analyzer_tasks = [
+            _run_guards(analyzer_name) for analyzer_name in self._config.enabled_analyzers
+        ]
         results = await asyncio.gather(*analyzer_tasks, return_exceptions=True)
         for result in results:
             if isinstance(result, Exception):

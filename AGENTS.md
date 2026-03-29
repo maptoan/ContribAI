@@ -106,6 +106,30 @@ config.llm.provider  # str
 config.analysis.enabled_analyzers  # list[str]
 ```
 
+### Gemini key pool (YAML)
+
+Use `llm.api_key` plus `llm.api_keys: [ ... ]` (merged, de-duped). Pool activates when
+`llm.key_pool.enabled: true` **or** more than one key after merge. Cooldowns and disabled keys
+persist to `llm.key_pool.state_path` (JSON). Vertex AI ignores the pool.
+
+```yaml
+llm:
+  provider: gemini
+  api_key: "primary-optional"
+  api_keys:
+    - "AIza..."
+    - "AIza..."
+  key_pool:
+    enabled: true
+    cooldown_transient_sec: 45
+    cooldown_rate_soft_sec: 120
+    cooldown_quota_long_sec: 86400
+    max_rotations_per_request: 12
+    client_cache_size: 32
+    max_concurrent_per_key: 2
+    state_path: "~/.contribai/gemini_key_pool_state.json"
+```
+
 ### Memory/Persistence
 ```python
 # SQLite via aiosqlite — outcome learning + working memory
@@ -151,7 +175,7 @@ tests/
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `GITHUB_TOKEN` | Yes | GitHub API authentication |
-| `GEMINI_API_KEY` | Yes* | Google Gemini LLM |
+| `GEMINI_API_KEY` | Yes* | Google Gemini LLM (or use `llm.api_keys` list in YAML) |
 | `OPENAI_API_KEY` | Alt | OpenAI LLM (alternative) |
 | `ANTHROPIC_API_KEY` | Alt | Anthropic LLM (alternative) |
 | `GOOGLE_CLOUD_PROJECT` | Opt | Vertex AI project |

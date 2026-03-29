@@ -14,7 +14,7 @@ from typing import Any, Protocol
 logger = logging.getLogger(__name__)
 
 
-class AgentRole(str, Enum):  # noqa: UP042
+class AgentRole(str, Enum):
     """Roles available for sub-agents."""
 
     ANALYZER = "analyzer"

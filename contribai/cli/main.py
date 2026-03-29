@@ -119,7 +119,7 @@ def run(ctx, language, stars, max_prs, dry_run, human_review, events_log):
         console.print("Set it in config.yaml or run: contribai config set github.token <token>")
         sys.exit(1)
 
-    if not config.llm.api_key and not config.llm.use_vertex:
+    if not config.llm.has_llm_credentials():
         console.print("[red]❌ LLM API key not configured![/red]")
         sys.exit(1)
 
@@ -166,7 +166,7 @@ def target(ctx, url, types, dry_run, human_review):
         console.print("[red]❌ GitHub token not configured![/red]")
         sys.exit(1)
 
-    if not config.llm.api_key and not config.llm.use_vertex:
+    if not config.llm.has_llm_credentials():
         console.print("[red]❌ LLM API key not configured![/red]")
         sys.exit(1)
 
@@ -223,7 +223,7 @@ def hunt(ctx, rounds, delay, language, mode, dry_run, human_review, events_log):
         console.print("[red]❌ GitHub token not configured![/red]")
         sys.exit(1)
 
-    if not config.llm.api_key and not config.llm.use_vertex:
+    if not config.llm.has_llm_credentials():
         console.print("[red]❌ LLM API key not configured![/red]")
         sys.exit(1)
 
@@ -272,7 +272,7 @@ def patrol(ctx, dry_run, pr_number):
         console.print("[red]❌ GitHub token not configured![/red]")
         sys.exit(1)
 
-    if not config.llm.api_key and not config.llm.use_vertex:
+    if not config.llm.has_llm_credentials():
         console.print("[red]❌ LLM API key not configured![/red]")
         sys.exit(1)
 
@@ -353,7 +353,7 @@ def analyze(ctx, url):
         console.print("[red]❌ GitHub token not configured![/red]")
         sys.exit(1)
 
-    if not config.llm.api_key and not config.llm.use_vertex:
+    if not config.llm.has_llm_credentials():
         console.print("[red]❌ LLM API key not configured![/red]")
         sys.exit(1)
 
@@ -421,7 +421,7 @@ def solve(ctx, url, max_issues, dry_run):
         console.print("[red]❌ GitHub token not configured![/red]")
         sys.exit(1)
 
-    if not config.llm.api_key and not config.llm.use_vertex:
+    if not config.llm.has_llm_credentials():
         console.print("[red]❌ LLM API key not configured![/red]")
         sys.exit(1)
 
@@ -707,7 +707,9 @@ def show_config(ctx):
             f"  Provider: {config.llm.provider}\n"
             f"  Model: {config.llm.model}\n"
             f"  API Key: "
-            f"{'****' + config.llm.api_key[-4:] if config.llm.api_key else 'NOT SET'}\n\n"
+            f"{'****' + config.llm.api_key[-4:] if config.llm.api_key else 'NOT SET'}\n"
+            f"  Gemini key pool: {len(config.llm.merged_gemini_api_keys())} key(s), "
+            f"enabled={config.llm.key_pool.enabled}\n\n"
             f"[bold]Discovery[/bold]\n"
             f"  Languages: {', '.join(config.discovery.languages)}\n"
             f"  Stars: {config.discovery.stars_range}\n\n"

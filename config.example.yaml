@@ -1,22 +1,58 @@
-# ContribAI Configuration
-# Copy this file to config.yaml and fill in your values
+# =============================================================================
+# ContribAI — FILE CẤU HÌNH MẪU (an toàn để đưa lên GitHub)
+# =============================================================================
+# Cách dùng:
+#   1) Sao chép:  copy config.example.yaml  →  config.yaml
+#   2) Điền/ghi đè bí mật qua biến môi trường (khuyến nghị) hoặc chỉnh dưới đây.
+#   3) Không commit config.yaml nếu có token / API key thật (thêm vào .gitignore).
+#
+# Thứ tự tìm file: đối số CLI > ./config.yaml > ~/.contribai/config.yaml > mặc định code.
+#
+# Khóa GitHub / LLM: để "" trong YAML vẫn chạy nếu đã set env (xem từng mục).
+# =============================================================================
 
 github:
-  token: "ghp_your_github_personal_access_token"
+  # Personal access token. Để trống → đọc GITHUB_TOKEN hoặc output của `gh auth token`.
+  token: ""
   max_repos_per_run: 5
   max_prs_per_day: 10
   rate_limit_buffer: 100
+  dco_signoff: true
 
 llm:
-  provider: "gemini"  # gemini | openai | anthropic | ollama
-  model: "gemini-2.5-flash"
-  api_key: "your_api_key_here"
+  # gemini | openai | anthropic | ollama
+  provider: gemini
+  model: gemini-2.5-flash
+
+  # Một key (Gemini / OpenAI / Anthropic). Để trống → GEMINI_API_KEY / OPENAI_* / ANTHROPIC_*.
+  api_key: ""
+
+  # Nhiều key Gemini (pool). Có thể kết hợp với api_key (api_key được ưu tiên trước).
+  # Chỉ dùng placeholder / để trống trong repo công khai.
+  api_keys: []
+
+  # Khoảng cách tối thiểu (giây) giữa hai lần gọi LLM *trên cùng một process/provider*.
+  # Tăng (ví dụ 0.5–2.0) nếu hay gặp 429 / RPM: kết hợp với analysis.max_concurrent_analyzers
+  # và pipeline.max_concurrent_repos / inter_repo_delay_sec.
+  min_request_interval_sec: 0.0
+
   temperature: 0.3
   max_tokens: 8192
-  # For ollama (local models):
-  # provider: "ollama"
-  # model: "codellama:13b"
-  # base_url: "http://localhost:11434"
+  base_url: null
+
+  # Vertex AI (Google Cloud): đặt project → bật Vertex thay vì api_key.
+  vertex_project: ""
+  vertex_location: global
+
+  key_pool:
+    enabled: false
+    cooldown_transient_sec: 45.0
+    cooldown_rate_soft_sec: 120.0
+    cooldown_quota_long_sec: 86400
+    max_rotations_per_request: 12
+    client_cache_size: 32
+    max_concurrent_per_key: 2
+    state_path: "~/.contribai/gemini_key_pool_state.json"
 
 analysis:
   enabled_analyzers:
@@ -24,8 +60,7 @@ analysis:
     - code_quality
     - docs
     - ui_ux
-  severity_threshold: "medium"  # low | medium | high | critical
-  max_context_tokens: 30000     # token budget for context compression
+  severity_threshold: medium
   max_file_size_kb: 500
   skip_patterns:
     - "*.min.js"
@@ -33,6 +68,9 @@ analysis:
     - "vendor/*"
     - "node_modules/*"
     - "*.lock"
+  max_context_tokens: 30000
+  # Số analyzer chạy song song tối đa (mỗi analyzer có thể gọi LLM). Giảm nếu RPM thấp.
+  max_concurrent_analyzers: 2
 
 contribution:
   enabled_types:
@@ -45,15 +83,14 @@ contribution:
     - refactor
   max_files_per_pr: 10
   run_tests_before_pr: true
-  style:
-    commit_convention: "conventional"
-    pr_description_style: "detailed"
+  # conventional | angular | none
+  commit_convention: conventional
+  # minimal | detailed
+  pr_description_style: detailed
 
 discovery:
   languages:
     - python
-    - javascript
-    - typescript
   stars_range: [50, 10000]
   min_last_activity_days: 30
   require_contributing_guide: false
@@ -63,38 +100,49 @@ storage:
   db_path: "~/.contribai/memory.db"
   cache_ttl_hours: 24
 
-# ── Phase 4+ Configuration ──────────────────────────
-
-pipeline:
-  max_concurrent_repos: 3         # parallel repo processing
-  timeout_per_repo_sec: 300
-  human_review: false              # true = pause for approval before each PR
-
 scheduler:
   enabled: false
-  cron: "0 */6 * * *"             # every 6 hours
-  timezone: "UTC"
+  cron: "0 */6 * * *"
+  timezone: UTC
   max_concurrent: 3
 
 web:
-  host: "127.0.0.1"
+  host: 127.0.0.1
   port: 8787
   enabled: true
-  api_keys: []                     # ["cai_xxx"] for auth, empty = no auth
-  webhook_secret: ""               # GitHub webhook secret for HMAC
+  api_keys: []
+  webhook_secret: ""
+
+pipeline:
+  max_concurrent_repos: 3
+  timeout_per_repo_sec: 300
+  # Trễ giữa các repo — giảm bùng nổ GitHub + LLM khi xử lý song song.
+  inter_repo_delay_sec: 5.0
+  max_retries: 2
+  min_quality_score: 5.0
+  human_review: false
 
 quota:
   github_daily_limit: 5000
   llm_daily_limit: 1000
   llm_daily_tokens: 1000000
 
-# Multi-model routing - auto-selects best model per task
-multi_model:
-  enabled: false                     # true to enable smart model routing
-  strategy: "balanced"               # performance | balanced | economy
+notifications:
+  slack_webhook: ""
+  discord_webhook: ""
+  telegram_token: ""
+  telegram_chat_id: ""
+  on_merge: true
+  on_close: true
+  on_run_complete: true
 
-# Sandbox execution - validates generated code before PR
+multi_model:
+  enabled: false
+  strategy: balanced
+  model_overrides: {}
+
 sandbox:
-  enabled: false                     # true to use Docker sandbox (requires Docker)
-  timeout: 30                        # max seconds per code execution
-  image: "python:3.11-slim"          # Docker image for sandbox
+  enabled: false
+  timeout: 30
+  # Tên image Docker tùy chọn (đúng field: docker_image, không phải "image").
+  docker_image: ""

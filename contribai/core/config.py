@@ -42,18 +42,44 @@ class GitHubConfig(BaseModel):
         return self
 
 
+class LLMKeyPoolConfig(BaseModel):
+    """Multi-key rotation for Gemini API key auth (e.g. many free-tier keys in YAML)."""
+
+    enabled: bool = False
+    cooldown_transient_sec: float = 45.0
+    cooldown_rate_soft_sec: float = 120.0
+    cooldown_quota_long_sec: float = 86_400.0
+    max_rotations_per_request: int = 12
+    client_cache_size: int = 32
+    max_concurrent_per_key: int = 2
+    state_path: str = "~/.contribai/gemini_key_pool_state.json"
+
+
 class LLMConfig(BaseModel):
     """LLM provider configuration."""
 
     provider: Literal["gemini", "openai", "anthropic", "ollama"] = "gemini"
     model: str = "gemini-2.5-flash"
     api_key: str = ""
+    api_keys: list[str] = Field(default_factory=list)
+    key_pool: LLMKeyPoolConfig = Field(default_factory=LLMKeyPoolConfig)
+    # Minimum seconds between consecutive LLM HTTP calls (per process). Helps avoid RPM bursts.
+    min_request_interval_sec: float = 0.0
     temperature: float = 0.3
     max_tokens: int = 8192
     base_url: str | None = None  # for ollama or custom endpoints
     # Vertex AI (Google Cloud)
     vertex_project: str = ""
     vertex_location: str = "global"
+
+    def merged_gemini_api_keys(self) -> list[str]:
+        """Ordered de-duplicated keys: `api_key` first, then `api_keys`."""
+        out: list[str] = []
+        for raw in (self.api_key, *self.api_keys):
+            s = (raw or "").strip()
+            if s and s not in out:
+                out.append(s)
+        return out
 
     @model_validator(mode="after")
     def resolve_api_key_and_defaults(self):
@@ -85,6 +111,16 @@ class LLMConfig(BaseModel):
         """Whether to use Vertex AI instead of API key auth."""
         return bool(self.vertex_project)
 
+    def has_llm_credentials(self) -> bool:
+        """True if the configured provider can run (keys or Vertex / local)."""
+        if self.use_vertex:
+            return bool(self.vertex_project)
+        if self.provider == "gemini":
+            return bool(self.merged_gemini_api_keys())
+        if self.provider == "ollama":
+            return True
+        return bool(self.api_key.strip())
+
 
 class AnalysisConfig(BaseModel):
     """Analysis engine configuration."""
@@ -98,6 +134,8 @@ class AnalysisConfig(BaseModel):
         default_factory=lambda: ["*.min.js", "*.min.css", "vendor/*", "node_modules/*", "*.lock"]
     )
     max_context_tokens: int = 30_000  # token budget for context compression
+    # Cap parallel analyzer strategies (each may call LLM). Lower = gentler on RPM (e.g. free tier).
+    max_concurrent_analyzers: int = 2
 
 
 class ContributionConfig(BaseModel):
