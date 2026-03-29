@@ -23,6 +23,16 @@ env/
 # Config with secrets
 config.yaml
 .env
+.env.local
+.env.*.local
+
+# Other credential / key material (never commit)
+*.pem
+id_rsa
+id_rsa.pub
+secrets/
+google-application-credentials.json
+**/google-credentials.json
 
 # SQLite memory
 *.db

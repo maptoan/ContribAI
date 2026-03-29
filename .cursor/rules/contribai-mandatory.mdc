@@ -1,0 +1,63 @@
+---
+description: >-
+  ContribAI — quy tắc bắt buộc mọi phiên. Tuân thủ CLAUDE.md + AGENTS.md, chuẩn code
+  Python, cấm file governance, xác minh pytest/ruff, protocol Reload/Handover/Backup.
+alwaysApply: true
+---
+
+# ContribAI — Quy tắc bắt buộc (Cursor)
+
+**Luôn áp dụng.** Nguồn chi tiết: `CLAUDE.md` (quy trình, điểm vào) và `AGENTS.md` (chuẩn kỹ thuật, pipeline, hạn chế). Nếu tài liệu mâu thuẫn: ưu tiên **CHANGELOG.md** + **AGENTS.md**.
+
+## Trước khi sửa code
+
+1. Đọc `CLAUDE.md` §1–4 khi chưa rõ ngữ cảnh.
+2. Khi đụng kiến trúc / milestone: `PROJECT_CONTEXT.md`, `CONVERSATION_HISTORY.md`.
+
+## Chuẩn code (rút gọn từ AGENTS.md — bắt buộc)
+
+- **Python 3.11+:** `snake_case` / `PascalCase`, Google docstrings (Args/Returns/Raises).
+- **Async:** Mọi I/O dùng `async`/`await`. Không `bare except`; log lỗi rõ ràng.
+- **Imports:** tuyệt đối; `from __future__ import annotations`.
+- **Types:** Đủ kiểu; union kiểu `str | None`.
+- **Định dạng:** dòng ≤ 100 ký tự; **ruff format** / **ruff check** trước khi coi task xong.
+
+## Pattern bắt buộc trong codebase này
+
+- Gọi LLM: qua `LLMProvider` / `complete()` — không tự chế client lẻ tẻ trong module pipeline.
+- GitHub: mọi HTTP API qua **`GitHubClient`** — không `httpx` thẳng tới `api.github.com` trong luồng chính trừ khi codebase đã có pattern riêng được chấp nhận.
+
+## Cấm chỉnh (governance / meta)
+
+Không sửa: `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `.github/FUNDING.yml` và meta governance tương đương (theo AGENTS.md).
+
+## Phạm vi thay đổi
+
+- Chỉ sửa phần **cần cho yêu cầu**; không refactor lan rộng / “dọn dẹp” không được hỏi.
+- **Không** commit hoặc ghi `config.yaml`, token, API key vào repo hoặc chat.
+
+## Xác minh sau thay đổi đáng kể
+
+Chạy (hoặc yêu cầu user chạy nếu không có môi trường):
+
+```bash
+pytest tests/ -q
+ruff check contribai/
+ruff format contribai/
+```
+
+## Quy trình phiên (khi user gọi tên)
+
+- **Reload** → skill `protocol-reload` (`.cursor/skills/protocol-reload/SKILL.md`).
+- **Handover** → `.cursor/skills/protocol-handover/SKILL.md`.
+- **Backup** → `.cursor/skills/protocol-backup/SKILL.md` (ContribAI: `pytest` +/hoặc `contribai run --dry-run`, không dùng `python main.py`).
+
+Thực hiện đủ bước trong skill tương ứng, không rút gọn.
+
+## Tiết kiệm context
+
+Ưu tiên `grep`/đọc **một** file hoặc vùng hàm; không đọc full tree khi không cần.
+
+## Ngôn ngữ trả lời user
+
+Khi user dùng tiếng Việt: trả lời **tiếng Việt** (trừ identifier/code).

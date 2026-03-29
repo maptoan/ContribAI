@@ -1,0 +1,62 @@
+# PROTOCOL: SYNCHRONIZE PROJECT CONTEXT
+
+Tài liệu này quy định các câu lệnh (prompts) chuẩn để đồng bộ hóa trạng thái dự án giữa người dùng và AI, đảm bảo tính liên tục và chính xác tuyệt đối.
+
+---
+
+## 1. QUY TRÌNH RELOAD (KHỞI ĐỘNG PHIÊN LÀM VIỆC)
+
+**Mục tiêu:** Đồng bộ hóa trạng thái hệ thống, nắm bắt logic nghiệp vụ hiện tại và xác định điểm dừng của phiên trước.
+
+**Prompt:**
+"Hệ thống hóa ngữ cảnh dự án theo các bước sau:
+1. **Phân tích Kiến trúc:** Đọc `PROJECT_CONTEXT.md` và `PROJECT_HANDOVER.md` để nắm bắt Tech Stack, Workflow và Cấu trúc thư mục hiện tại.
+2. **Truy vết Lịch sử:** Đọc `CONVERSATION_HISTORY.md` để xác định các tác vụ vừa hoàn thành, lý do thay đổi logic (The 'Why') và các vấn đề còn tồn đọng.
+3. **Kiểm tra Tiến độ:** Rà soát `CHANGELOG.md` để cập nhật các thay đổi phiên bản gần nhất.
+
+**Kết quả yêu cầu:** Xác nhận trạng thái 'Ready' bằng một bản tóm tắt súc tích:
+- Trạng thái hiện tại (Current State).
+- Các tác vụ đang dang dở (Work in Progress).
+- Đề xuất hành động ưu tiên cho phiên làm việc này."
+
+---
+
+## 2. QUY TRÌNH HANDOVER (KẾT THÚC PHIÊN LÀM VIỆC)
+
+**Mục tiêu:** Lưu trữ "ảnh chụp" (snapshot) ngữ cảnh, logic code và các quyết định kỹ thuật để kế thừa cho phiên sau.
+
+**Prompt:**
+"Thực thi giao thức bàn giao (Handover Protocol):
+1. **Tổng hợp:** Đúc kết các thay đổi quan trọng về code, sửa lỗi (bug fixes) và các quyết định kiến trúc đã thực hiện trong phiên này.
+2. **Cập nhật Nhật ký:** Ghi đè hoặc nối tiếp vào `CONVERSATION_HISTORY.md` với cấu trúc:
+   - **Completed:** Các mục đã hoàn tất.
+   - **Pending/Blockers:** Các vấn đề chưa giải quyết hoặc đang bị chặn.
+   - **Next Steps:** Lộ trình cụ thể cho phiên kế tiếp.
+3. **Đồng bộ Context:** Nếu có thay đổi về cấu trúc file hoặc logic cốt lõi, hãy cập nhật tương ứng vào `PROJECT_CONTEXT.md`.
+
+**Kết quả yêu cầu:** Xác nhận file `CONVERSATION_HISTORY.md` đã được cập nhật chính xác trước khi kết thúc."
+
+## 3. QUY TRÌNH BACKUP STABLE (TRƯỚC KHI THAY ĐỔI LỚN)
+
+**Mục tiêu:** Tạo một bản sao lưu đáng tin cậy của phiên bản ổn định hiện tại trước khi thực hiện refactor hoặc thay đổi kiến trúc lớn, đảm bảo khả năng rollback nhanh chóng nếu xảy ra lỗi.
+
+**Prompt:**
+"Thực thi quy trình Backup Stable trước khi bắt đầu thay đổi lớn:
+1. **Xác nhận Stable:** Chạy `python main.py --dry-run` (hoặc test suite nếu có) để xác nhận phiên bản hiện tại hoạt động ổn định. Nếu có lỗi, DỪNG và sửa trước.
+2. **Tạo Git Tag:** Tạo tag đánh dấu phiên bản stable với mô tả rõ ràng:
+   - `git add -A && git commit -m 'chore: stable checkpoint before [mô tả thay đổi]'`
+   - `git tag -a stable-vX.Y-pre-[tên-thay-đổi] -m 'Stable checkpoint trước khi [mô tả]'`
+3. **Backup vật lý (tùy chọn):** Nếu thay đổi có rủi ro cao, tạo thêm bản backup:
+   - `python scripts/backup_to_nas.py` (nếu đã cấu hình NAS)
+   - Hoặc copy thủ công thư mục `src/` sang `backups/src_stable_YYYYMMDD/`
+4. **Ghi nhận:** Ghi vào đầu `CHANGELOG.md` một dòng:
+   - `## [Unreleased] - Checkpoint: stable-vX.Y trước khi [tên thay đổi]`
+
+**Kết quả yêu cầu:** Xác nhận tag đã được tạo và báo cáo: tên tag, hash commit, và kết quả kiểm tra ổn định."
+
+---
+
+## 4. PROMPT KHAI THÁC OPENCODE + ANTIGRAVITY
+
+**Prompt:**
+"Hãy lập kế hoạch nâng cấp module X, sau đó gọi OpenCode thực thi việc refactor theo chuẩn Clean Code".
