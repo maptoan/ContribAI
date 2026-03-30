@@ -38,7 +38,8 @@ Discovery → Middleware chain → Analysis (skills + analyzers) → Generation 
 ```
 
 - **Middleware:** rate limit, validation, retry, DCO, quality gate (`contribai/core/middleware.py`).
-- **Phân tích:** `contribai/analysis/` — progressive skills, repo intelligence (v4+); output finding từ LLM ưu tiên **JSON** (`application/json` trên Gemini), parse nhiều lớp + fallback YAML trong `analyzer.py`.
+- **Phân tích:** `contribai/analysis/` — progressive skills, repo intelligence (v4+); output finding từ LLM ưu tiên **JSON** (`application/json` trên Gemini khi `analysis.use_gemini_json_mode`), parse nhiều lớp + fallback YAML trong `analyzer.py`; event `ANALYZER_PARSE_FAILED` khi parse hỏng.
+- **Vận hành an toàn (pipeline):** `discovery.repo_allowlist` + **`discovery.enforce_repo_allowlist`** (tắt = bỏ qua list cho discovery/hunt/target); `github.secret_scan_mode` + heuristic `patch_secret_scan` trước PR; `max_prs_per_repo_per_run`; `pipeline.repo_pr_cooldown_hours`.
 - **Sinh mã:** `contribai/generator/engine.py`, scorer.
 - **PR:** `contribai/pr/manager.py`; phản hồi review: `patrol.py`.
 
