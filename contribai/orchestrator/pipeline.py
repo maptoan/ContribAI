@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from contribai.agents.registry import create_default_registry
 from contribai.analysis.analyzer import CodeAnalyzer
@@ -30,6 +31,7 @@ from contribai.github.guidelines import fetch_repo_guidelines
 from contribai.issues.solver import IssueSolver
 from contribai.llm.provider import create_llm_provider
 from contribai.orchestrator.memory import Memory
+from contribai.orchestrator.patch_secret_scan import patch_secret_hits
 from contribai.orchestrator.review_gate import HumanReviewer
 from contribai.pr.manager import PRManager
 from contribai.tools.protocol import create_default_tools
@@ -166,6 +168,7 @@ class ContribPipeline:
             llm=self._llm,
             github=self._github,
             config=self.config.analysis,
+            event_bus=self._event_bus,
         )
 
         # Generator — now with memory for repo_preferences
@@ -238,6 +241,51 @@ class ContribPipeline:
         if self._memory:
             await self._memory.close()
 
+    async def _repo_in_pr_cooldown(self, repo: Repository) -> bool:
+        """True if a recent PR for this repo is within repo_pr_cooldown_hours."""
+        hours = float(self.config.pipeline.repo_pr_cooldown_hours or 0.0)
+        if hours <= 0 or not self._memory:
+            return False
+        last = await self._memory.get_latest_pr_created_at(repo.full_name)
+        if not last:
+            return False
+        try:
+            raw = last.replace("Z", "+00:00")
+            prev = datetime.fromisoformat(raw)
+            if prev.tzinfo is None:
+                prev = prev.replace(tzinfo=UTC)
+            delta_h = (datetime.now(UTC) - prev).total_seconds() / 3600.0
+            if delta_h < hours:
+                logger.info(
+                    "⏳ Repo %s in PR cooldown (last PR %.1fh ago < %.1fh)",
+                    repo.full_name,
+                    delta_h,
+                    hours,
+                )
+                return True
+        except ValueError:
+            logger.debug("Unparseable PR timestamp: %s", last)
+        return False
+
+    def _contribution_blocked_by_secret_scan(self, contribution) -> bool:
+        """Warn or block when generated patch matches token-like patterns."""
+        mode = self.config.github.secret_scan_mode
+        if mode == "off":
+            return False
+        parts = list(contribution.changes)
+        if getattr(contribution, "tests_added", None):
+            parts.extend(contribution.tests_added)
+        blob = "\n".join(c.new_content for c in parts)
+        hits = patch_secret_hits(blob)
+        if not hits:
+            return False
+        msg = f"patch matches secret-like patterns: {', '.join(hits)}"
+        if mode == "warn":
+            logger.warning("⚠️ %s", msg)
+            return False
+        logger.error("🛑 Blocking PR — %s", msg)
+        return True
+
     # ── Public API ─────────────────────────────────────────────────────────
 
     async def run(
@@ -270,6 +318,17 @@ class ContribPipeline:
                     self.config.github.max_prs_per_day,
                 )
                 return result
+
+            if (
+                not dry_run
+                and self.config.pipeline.warn_when_live_without_repo_allowlist
+                and self.config.discovery.enforce_repo_allowlist
+                and not self.config.discovery.repo_allowlist
+            ):
+                logger.warning(
+                    "Live run with empty discovery.repo_allowlist — "
+                    "set it to limit which repositories can be targeted."
+                )
 
             # 1. Discover repos
             logger.info("Discovering repositories...")
@@ -666,6 +725,12 @@ class ContribPipeline:
 
         try:
             repo = await self._github.get_repo_details(owner, name)
+            if not self.config.discovery.allows_repo(repo.full_name):
+                logger.warning(
+                    "Repo %s is not in discovery.repo_allowlist — skipping.",
+                    repo.full_name,
+                )
+                return result
             repo_result = await self._process_repo(repo, dry_run)
             result.repos_analyzed = 1
             result.findings_total = repo_result.findings_total
@@ -699,8 +764,14 @@ class ContribPipeline:
     ) -> PipelineResult:
         """Process a single repository through the full pipeline."""
         result = PipelineResult()
+        per_repo_cap = max(1, self.config.github.max_prs_per_repo_per_run)
+        budget = min(max_prs, per_repo_cap)
         logger.info("=" * 60)
         logger.info("📦 Processing: %s", repo.full_name)
+
+        if await self._repo_in_pr_cooldown(repo):
+            result.repos_analyzed = 1
+            return result
 
         # ── Auto-load working memory (AgentScope static_control pattern) ──
         cached_context = await self._memory.get_context(repo.full_name, "analysis_summary")
@@ -892,7 +963,7 @@ class ContribPipeline:
         relevant_files: dict[str, str] = {}
         # Deduplicate file paths across all findings we'll process
         file_paths_to_fetch = []
-        for finding in analysis.top_findings[:max_prs]:
+        for finding in analysis.top_findings[:budget]:
             if finding.file_path and finding.file_path not in relevant_files:
                 file_paths_to_fetch.append(finding.file_path)
 
@@ -949,9 +1020,9 @@ class ContribPipeline:
         except Exception:
             logger.debug("Could not fetch GitHub PRs for dedup, using memory only")
 
-        original_count = len(analysis.top_findings[:max_prs])
+        original_count = len(analysis.top_findings[:budget])
         filtered_findings = []
-        for finding in analysis.top_findings[:max_prs]:
+        for finding in analysis.top_findings[:budget]:
             title_lower = finding.title.lower()
             # Check title similarity
             is_title_dup = any(_titles_similar(title_lower, pt) for pt in past_titles_lower)
@@ -988,19 +1059,20 @@ class ContribPipeline:
         # Validate findings against full file content to filter false positives
         validated_findings = await self._validate_findings(filtered_findings, relevant_files)
 
-        # Limit to max 2 findings per repo to avoid spamming
-        if len(validated_findings) > 2:
+        # Limit findings per repo (config) to avoid spamming
+        if len(validated_findings) > per_repo_cap:
             logger.info(
-                "📉 Limiting to 2 findings per repo (had %d)",
+                "📉 Limiting to %d findings per repo (had %d)",
+                per_repo_cap,
                 len(validated_findings),
             )
-            validated_findings = validated_findings[:2]
+            validated_findings = validated_findings[:per_repo_cap]
 
         logger.info(
             "🔎 Validated %d/%d findings (filtered %d false positives)",
             len(validated_findings),
-            min(len(analysis.top_findings), max_prs),
-            min(len(analysis.top_findings), max_prs) - len(validated_findings),
+            min(len(analysis.top_findings), budget),
+            min(len(analysis.top_findings), budget) - len(validated_findings),
         )
 
         # Generate contributions for validated findings
@@ -1043,6 +1115,12 @@ class ContribPipeline:
                 continue
             if decision.skipped:
                 logger.info("⏭️ Human skipped: %s", contribution.title)
+                continue
+
+            if self._contribution_blocked_by_secret_scan(contribution):
+                result.errors.append(
+                    f"Skipped PR (secret scan): {contribution.title}",
+                )
                 continue
 
             # Create PR
@@ -1132,6 +1210,9 @@ class ContribPipeline:
                 "🔒 %s restricts PRs to collaborators, skipping issue solving.",
                 repo.full_name,
             )
+            return result
+
+        if await self._repo_in_pr_cooldown(repo):
             return result
 
         # Initialize issue solver
@@ -1245,6 +1326,12 @@ class ContribPipeline:
                     "🏃 [DRY RUN] Would create PR for issue #%d: %s",
                     issue.number,
                     contribution.title,
+                )
+                continue
+
+            if self._contribution_blocked_by_secret_scan(contribution):
+                result.errors.append(
+                    f"Skipped PR for issue #{issue.number} (secret scan)",
                 )
                 continue
 

@@ -29,6 +29,7 @@ class EventType(StrEnum):
     # Analysis
     ANALYSIS_START = "analysis.start"
     ANALYSIS_COMPLETE = "analysis.complete"
+    ANALYZER_PARSE_FAILED = "analyzer.parse_failed"
 
     # Generation
     GENERATION_START = "generation.start"

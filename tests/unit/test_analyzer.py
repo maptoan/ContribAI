@@ -173,19 +173,22 @@ findings:
     suggestion: Use env vars
 ```"""
         ctx = RepoContext(repo=sample_repo)
-        findings = analyzer._parse_findings(response, "security", ctx)
+        findings, parse_failed = analyzer._parse_findings(response, "security", ctx)
+        assert not parse_failed
         assert len(findings) == 1
         assert findings[0].title == "Hardcoded secret"
         assert findings[0].severity == Severity.HIGH
 
     def test_parse_empty_response(self, analyzer, sample_repo):
         ctx = RepoContext(repo=sample_repo)
-        findings = analyzer._parse_findings("findings: []", "security", ctx)
+        findings, parse_failed = analyzer._parse_findings("findings: []", "security", ctx)
+        assert not parse_failed
         assert len(findings) == 0
 
     def test_parse_invalid_yaml(self, analyzer, sample_repo):
         ctx = RepoContext(repo=sample_repo)
-        findings = analyzer._parse_findings("not valid yaml {{{", "security", ctx)
+        findings, parse_failed = analyzer._parse_findings("not valid yaml {{{", "security", ctx)
+        assert parse_failed
         assert len(findings) == 0
 
 
@@ -197,7 +200,8 @@ class TestParseFindingsJSON:
             '"suggestion": "Set CheckOrigin properly"}]'
         )
         ctx = RepoContext(repo=sample_repo)
-        findings = analyzer._parse_findings(response, "security", ctx)
+        findings, parse_failed = analyzer._parse_findings(response, "security", ctx)
+        assert not parse_failed
         assert len(findings) == 1
         assert "OPEN_3" in findings[0].description
 
@@ -206,7 +210,8 @@ class TestParseFindingsJSON:
 [{"title": "x", "severity": "medium", "file_path": "a.js", "description": "d"}]
 ```"""
         ctx = RepoContext(repo=sample_repo)
-        findings = analyzer._parse_findings(response, "ui_ux", ctx)
+        findings, parse_failed = analyzer._parse_findings(response, "ui_ux", ctx)
+        assert not parse_failed
         assert len(findings) == 1
         assert findings[0].title == "x"
 
@@ -216,13 +221,16 @@ class TestParseFindingsJSON:
             '"file_path": "b.ts", "description": ""}]}'
         )
         ctx = RepoContext(repo=sample_repo)
-        findings = analyzer._parse_findings(response, "code_quality", ctx)
+        findings, parse_failed = analyzer._parse_findings(response, "code_quality", ctx)
+        assert not parse_failed
         assert len(findings) == 1
         assert findings[0].title == "y"
 
     def test_parse_json_empty_array(self, analyzer, sample_repo):
         ctx = RepoContext(repo=sample_repo)
-        assert len(analyzer._parse_findings("[]", "docs", ctx)) == 0
+        findings, parse_failed = analyzer._parse_findings("[]", "docs", ctx)
+        assert not parse_failed
+        assert len(findings) == 0
 
     def test_parse_prefers_json_over_ambiguous(self, analyzer, sample_repo):
         """JSON branch runs first; valid JSON array wins."""
@@ -230,7 +238,8 @@ class TestParseFindingsJSON:
             '[{"title": "j", "severity": "critical", "file_path": "f.py", "description": ""}]'
         )
         ctx = RepoContext(repo=sample_repo)
-        findings = analyzer._parse_findings(response, "security", ctx)
+        findings, parse_failed = analyzer._parse_findings(response, "security", ctx)
+        assert not parse_failed
         assert len(findings) == 1
         assert findings[0].severity == Severity.CRITICAL
 

@@ -38,7 +38,7 @@ Discovery → Middleware chain → Analysis (skills + analyzers) → Generation 
 ```
 
 - **Middleware:** rate limit, validation, retry, DCO, quality gate (`contribai/core/middleware.py`).
-- **Phân tích:** `contribai/analysis/` — progressive skills, repo intelligence (v4+).
+- **Phân tích:** `contribai/analysis/` — progressive skills, repo intelligence (v4+); output finding từ LLM ưu tiên **JSON** (`application/json` trên Gemini), parse nhiều lớp + fallback YAML trong `analyzer.py`.
 - **Sinh mã:** `contribai/generator/engine.py`, scorer.
 - **PR:** `contribai/pr/manager.py`; phản hồi review: `patrol.py`.
 

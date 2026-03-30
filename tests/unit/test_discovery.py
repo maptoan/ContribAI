@@ -107,3 +107,31 @@ class TestCriteriaFromConfig:
         assert criteria.languages == ["python"]
         assert criteria.stars_min == 100
         assert criteria.stars_max == 5000
+
+
+class TestAllowlistEnforcement:
+    @pytest.mark.asyncio
+    async def test_discover_skips_allowlist_when_enforcement_off(self):
+        other = Repository(
+            owner="other",
+            name="proj",
+            full_name="other/proj",
+            language="python",
+            stars=500,
+            forks=50,
+            open_issues=5,
+            default_branch="main",
+            has_license=True,
+        )
+        client = AsyncMock()
+        cfg = DiscoveryConfig(
+            repo_allowlist=["myorg/*"],
+            enforce_repo_allowlist=False,
+        )
+        disc = RepoDiscovery(client=client, config=cfg)
+        disc._search = AsyncMock(return_value=[other])
+        disc._filter_contributable = AsyncMock(side_effect=lambda repos, _: repos)
+        crit = DiscoveryCriteria(languages=["python"], max_results=10, min_last_activity_days=0)
+        out = await disc.discover(crit)
+        assert len(out) == 1
+        assert out[0].full_name == "other/proj"

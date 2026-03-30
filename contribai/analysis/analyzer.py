@@ -18,6 +18,7 @@ from fnmatch import fnmatch
 
 from contribai.analysis.context_compressor import ContextCompressor
 from contribai.core.config import AnalysisConfig
+from contribai.core.events import Event, EventBus, EventType
 from contribai.core.models import (
     AnalysisResult,
     ContributionType,
@@ -204,10 +205,12 @@ class CodeAnalyzer:
         llm: LLMProvider,
         github: GitHubClient,
         config: AnalysisConfig,
+        event_bus: EventBus | None = None,
     ):
         self._llm = llm
         self._github = github
         self._config = config
+        self._event_bus = event_bus
         self._compressor = ContextCompressor(
             max_context_tokens=getattr(config, "max_context_tokens", 30_000)
         )
@@ -660,13 +663,23 @@ class CodeAnalyzer:
         )
 
         try:
+            use_json = getattr(self._config, "use_gemini_json_mode", True)
             response = await self._llm.complete(
                 prompt,
                 system=system,
                 temperature=0.2,
-                response_mime_type=_ANALYZER_RESPONSE_MIME_JSON,
+                response_mime_type=_ANALYZER_RESPONSE_MIME_JSON if use_json else None,
             )
-            return self._parse_findings(response, name, context)
+            findings, parse_failed = self._parse_findings(response, name, context)
+            if parse_failed and self._event_bus:
+                await self._event_bus.emit(
+                    Event(
+                        type=EventType.ANALYZER_PARSE_FAILED,
+                        source="analyzer._run_analyzer",
+                        data={"repo": context.repo.full_name, "analyzer": name},
+                    )
+                )
+            return findings
         except Exception as e:
             logger.error("Analyzer %s failed: %s", name, e)
             return []
@@ -819,11 +832,17 @@ class CodeAnalyzer:
             parts.append(f"### {path}\n```\n{truncated}\n```")
         return "\n\n".join(parts) if parts else "No source files available."
 
-    def _parse_findings(self, response: str, analyzer_name: str, ctx: RepoContext) -> list[Finding]:
+    def _parse_findings(
+        self, response: str, analyzer_name: str, ctx: RepoContext
+    ) -> tuple[list[Finding], bool]:
         """Parse LLM response into Finding objects.
 
         Order: JSON (fenced or heuristic) → YAML fallback for older prompts / non-Gemini runs.
+
+        Returns:
+            (findings, parse_failed). parse_failed is True if both JSON and YAML failed.
         """
+        _ = ctx  # reserved for future per-repo parse hints
         type_map = {
             "security": ContributionType.SECURITY_FIX,
             "code_quality": ContributionType.CODE_QUALITY,
@@ -846,30 +865,32 @@ class CodeAnalyzer:
                 "Failed to parse %s findings (JSON and YAML both failed)",
                 analyzer_name,
             )
-        else:
-            for item in items:
-                severity_str = str(item.get("severity", "medium")).lower()
-                try:
-                    severity = Severity(severity_str)
-                except ValueError:
-                    severity = Severity.MEDIUM
+            logger.info("Analyzer %s found %d issues", analyzer_name, 0)
+            return [], True
 
-                findings.append(
-                    Finding(
-                        id=str(uuid.uuid4())[:8],
-                        type=contrib_type,
-                        severity=severity,
-                        title=str(item.get("title", "Untitled finding")),
-                        description=str(item.get("description", "")),
-                        file_path=str(item.get("file_path", "")),
-                        line_start=item.get("line_start"),
-                        line_end=item.get("line_end"),
-                        suggestion=item.get("suggestion"),
-                    )
+        for item in items:
+            severity_str = str(item.get("severity", "medium")).lower()
+            try:
+                severity = Severity(severity_str)
+            except ValueError:
+                severity = Severity.MEDIUM
+
+            findings.append(
+                Finding(
+                    id=str(uuid.uuid4())[:8],
+                    type=contrib_type,
+                    severity=severity,
+                    title=str(item.get("title", "Untitled finding")),
+                    description=str(item.get("description", "")),
+                    file_path=str(item.get("file_path", "")),
+                    line_start=item.get("line_start"),
+                    line_end=item.get("line_end"),
+                    suggestion=item.get("suggestion"),
                 )
+            )
 
         logger.info("Analyzer %s found %d issues", analyzer_name, len(findings))
-        return findings
+        return findings, False
 
     def _deduplicate(self, findings: list[Finding]) -> list[Finding]:
         """Remove duplicate findings."""

@@ -16,19 +16,25 @@ Nhật ký phiên làm việc theo giao thức trong [`! Prompt to reload projec
 - Tạo [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) và file nhật ký này cho protocol Reload/Handover.
 - Thêm [`PROJECT_HANDOVER.md`](PROJECT_HANDOVER.md) (mục lục → `CONVERSATION_HISTORY`).
 - Tạo skill **Reload / Handover / Backup** trong [`.cursor/skills/`](.cursor/skills/README.md) và [`.agent/skills/`](.agent/skills/README.md) (Cursor + Antigravity).
-- **Chạy thử** `contribai target` trên repo riêng (`maptoan/MTrans`): phân tích + sinh patch **thành công**; **PR không tạo được** do GitHub PAT thiếu quyền `create reference` (403). *Why:* token cần quyền ghi nội dung/nhánh (classic `repo` hoặc fine-grained **Contents: Read and write**).
+
+**Trên main (commit gần đây):**
+
+- **Gemini key pool** + cooldown, `min_request_interval_sec`, `max_concurrent_analyzers`, `config.example.yaml` + `AGENTS.md`, test `test_key_pool.py`.
+- **Handover / tài liệu:** track `!HDSD`, `CLAUDE`, `GEMINI`, `PROJECT_*`, `.cursor/`, `.agent/`; `.gitignore` bổ sung pattern secret (`.env.local`, PEM, …).
+- **Analyzer findings:** định dạng chính **JSON** + parse nhiều lớp (fence, repair, fallback YAML); Gemini **`response_mime_type=application/json`** qua `LLMProvider` → `GenerateContentConfig` (commit `8c96b13`).
+
+- **Chạy thử:** `contribai target` trên `maptoan/MTrans` / `mcaro-go`: sau khi sửa PAT, PR tạo được (log 201 `git/refs`). `maptoan/mcaro` + `Mcaro`: có cảnh báo parse YAML ui_ux trước đổi JSON; sau đổi JSON đã commit.
 
 ### Pending / Blockers
 
-- Khôi phục hoặc cam kết thay đổi **`config.example.yaml`** (trên một số clone có trạng thái xóa cục bộ; README vẫn `cp config.example.yaml`).
-- **PAT GitHub:** cấp đủ quyền để `POST /repos/{owner}/{repo}/git/refs` (tạo nhánh) trước khi chạy live PR trên repo của chính user.
 - (Tùy chọn) Đồng bộ header phiên bản trong `docs/project-roadmap.md` / `docs/system-architecture.md` với 4.1.0.
+- Nếu model Gemini preview không hỗ trợ tốt JSON mode: cân nhắc **cờ config** tắt `application/json` cho analyzer (chưa có trong `config.yaml`).
 
 ### Next Steps (ưu tiên)
 
-1. Rotate PAT nếu từng lộ trong chat; cập nhật `config.yaml`; chạy lại `contribai target <url>` hoặc dry-run.
-2. Quyết định `config.example.yaml`: restore từ upstream hoặc commit xóa + sửa README/!HDSD.
-3. Kết phiên sau: thêm mục **Phiên mới** (ngày + Completed / Pending / Next Steps).
+1. `git pull` / `git push` fork nếu làm việc đa máy; đồng bộ `upstream` khi cần.
+2. Chạy lại `contribai target` / `contribai serve` sau khi merge JSON analyzer; theo dõi log nếu API trả 400 do JSON mode + model lạ.
+3. Phiên sau: nối khối **Phiên YYYY-MM-DD** bên dưới.
 
 ---
 
@@ -37,6 +43,26 @@ Nhật ký phiên làm việc theo giao thức trong [`! Prompt to reload projec
 - **Đã làm:** Phân tích tracklog `~/.contribai/contribai.log` (404 URL `.git` lần đầu; lần hai phân tích đầy đủ; lỗi 403 khi tạo ref).
 - **Chưa xong:** Mở PR tự động thành công trên `MTrans` do token.
 - **Next:** Sửa quyền PAT → chạy lại; không dán token vào chat.
+
+---
+
+## Phiên 2026-03-30 (Handover)
+
+### Completed
+
+- Thiết kế và **commit** luồng finding: JSON chính + parse lớp (fence / heuristic / YAML fallback) + **`response_mime_type`** cho Gemini (`8c96b13`).
+- Cập nhật **`PROJECT_CONTEXT.md`** (mô tả analyzer JSON).
+- Tổng hợp lại mục *Trạng tổng quan*: các commit key pool, docs/skills, JSON analyzer; loại pending đã xong (`config.example`, PAT sau khi sửa).
+
+### Pending / Blockers
+
+- Tuỳ chọn: cờ cấu hình tắt JSON mode analyzer nếu model/API lỗi.
+- Tuỳ chọn: đồng bộ `docs/*` với 4.1.0.
+
+### Next Steps
+
+- Push `main` lên `origin` nếu chưa push (`8c96b13` và các commit trước).
+- Reload phiên sau: đọc `PROJECT_CONTEXT` + khối này; chạy test `pytest tests/unit/test_analyzer.py` sau thay đổi analyzer.
 
 ---
 

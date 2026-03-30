@@ -1,5 +1,7 @@
 """Tests for the memory system."""
 
+import asyncio
+
 import pytest
 
 from contribai.orchestrator.memory import Memory
@@ -68,3 +70,18 @@ class TestMemory:
         assert await memory.get_today_pr_count() == 0
         await memory.record_pr("a/b", 1, "url", "title", "fix")
         assert await memory.get_today_pr_count() == 1
+
+    @pytest.mark.asyncio
+    async def test_get_latest_pr_created_at_none(self, memory):
+        assert await memory.get_latest_pr_created_at("owner/repo") is None
+
+    @pytest.mark.asyncio
+    async def test_get_latest_pr_created_at_most_recent(self, memory):
+        await memory.record_pr("x/y", 1, "u1", "t1", "fix")
+        await asyncio.sleep(0.05)
+        await memory.record_pr("x/y", 2, "u2", "t2", "fix")
+        latest = await memory.get_latest_pr_created_at("x/y")
+        assert latest is not None
+        repo_prs = await memory.get_repo_prs("x/y")
+        assert repo_prs[0]["pr_number"] == 2
+        assert repo_prs[1]["pr_number"] == 1

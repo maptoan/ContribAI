@@ -42,6 +42,16 @@ class RepoDiscovery:
         # Prioritize by impact potential
         repos = self._prioritize(repos)
 
+        # Optional allowlist (owner/repo or fnmatch patterns)
+        if self._config.enforce_repo_allowlist and self._config.repo_allowlist:
+            before = len(repos)
+            repos = [r for r in repos if self._config.allows_repo(r.full_name)]
+            logger.info(
+                "Allowlist filter: %d → %d repositories",
+                before,
+                len(repos),
+            )
+
         # Return top N
         return repos[: criteria.max_results]
 

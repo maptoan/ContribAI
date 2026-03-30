@@ -209,6 +209,15 @@ class Memory:
         cols = [d[0] for d in cursor.description]
         return [dict(zip(cols, row, strict=False)) for row in rows]
 
+    async def get_latest_pr_created_at(self, repo: str) -> str | None:
+        """ISO timestamp of the most recent PR we recorded for this repo, or None."""
+        cursor = await self._db.execute(
+            "SELECT created_at FROM submitted_prs WHERE repo = ? ORDER BY created_at DESC LIMIT 1",
+            (repo,),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
     # ── Run Log ────────────────────────────────────────────────────────────
 
     async def start_run(self) -> int:

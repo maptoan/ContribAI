@@ -16,8 +16,12 @@ github:
   token: ""
   max_repos_per_run: 5
   max_prs_per_day: 10
+  # Số PR tối đa / repo trong một lần chạy pipeline (sau validate).
+  max_prs_per_repo_per_run: 3
   rate_limit_buffer: 100
   dco_signoff: true
+  # Quét patch trước khi mở PR: off | warn (log) | block (không tạo PR nếu giống token).
+  secret_scan_mode: warn
 
 llm:
   # gemini | openai | anthropic | ollama
@@ -95,6 +99,10 @@ discovery:
   min_last_activity_days: 30
   require_contributing_guide: false
   topics: []
+  # Danh sách repo được phép (rỗng = không hạn chế). Dạng owner/repo hoặc fnmatch (vd: myorg/*).
+  # Bật false để bỏ qua allowlist (hunt rộng) — vẫn có thể giữ repo_allowlist trong file.
+  enforce_repo_allowlist: true
+  repo_allowlist: []
 
 storage:
   db_path: "~/.contribai/memory.db"
@@ -121,6 +129,10 @@ pipeline:
   max_retries: 2
   min_quality_score: 5.0
   human_review: false
+  # Số giờ tối thiểu trước khi repo nhận PR mới (từ lần tạo PR gần nhất trong DB). 0 = tắt.
+  repo_pr_cooldown_hours: 0
+  # live discovery + repo_allowlist rỗng → log cảnh báo (tránh chạy rộng nhầm).
+  warn_when_live_without_repo_allowlist: true
 
 quota:
   github_daily_limit: 5000

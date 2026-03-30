@@ -3,7 +3,7 @@
 import pytest
 import yaml
 
-from contribai.core.config import ContribAIConfig, LLMConfig, load_config
+from contribai.core.config import ContribAIConfig, DiscoveryConfig, LLMConfig, load_config
 from contribai.core.exceptions import ConfigError
 
 
@@ -50,3 +50,26 @@ class TestLoadConfig:
         bad_file.write_text("{{invalid yaml::")
         with pytest.raises(ConfigError):
             load_config(bad_file)
+
+
+class TestDiscoveryAllowlist:
+    def test_empty_allowlist_allows_all(self):
+        d = DiscoveryConfig(repo_allowlist=[])
+        assert d.allows_repo("any/thing")
+
+    def test_exact_match(self):
+        d = DiscoveryConfig(repo_allowlist=["Acme/Repo"])
+        assert d.allows_repo("acme/repo")
+        assert not d.allows_repo("acme/other")
+
+    def test_fnmatch(self):
+        d = DiscoveryConfig(repo_allowlist=["myorg/*"])
+        assert d.allows_repo("myorg/foo")
+        assert not d.allows_repo("otherorg/foo")
+
+    def test_enforce_off_ignores_allowlist(self):
+        d = DiscoveryConfig(
+            repo_allowlist=["only/one"],
+            enforce_repo_allowlist=False,
+        )
+        assert d.allows_repo("random/other")

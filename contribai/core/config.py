@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Literal
 
@@ -19,8 +20,13 @@ class GitHubConfig(BaseModel):
     token: str = ""
     max_repos_per_run: int = 5
     max_prs_per_day: int = 10
+    # Cap findings → PRs per repo in one pipeline pass (after validation).
+    max_prs_per_repo_per_run: int = 3
     rate_limit_buffer: int = 100
     dco_signoff: bool = True  # Auto-append Signed-off-by to commit messages
+    # Scan generated patch for strings resembling API keys before opening PR.
+    # off = skip; warn = log only; block = do not create PR if matched.
+    secret_scan_mode: Literal["off", "warn", "block"] = "warn"
 
     @model_validator(mode="after")
     def resolve_token(self):
@@ -136,6 +142,8 @@ class AnalysisConfig(BaseModel):
     max_context_tokens: int = 30_000  # token budget for context compression
     # Cap parallel analyzer strategies (each may call LLM). Lower = gentler on RPM (e.g. free tier).
     max_concurrent_analyzers: int = 2
+    # Gemini: ask for application/json in analyzer output. Disable if the model/API errors.
+    use_gemini_json_mode: bool = True
 
 
 class ContributionConfig(BaseModel):
@@ -166,6 +174,25 @@ class DiscoveryConfig(BaseModel):
     min_last_activity_days: int = 30
     require_contributing_guide: bool = False
     topics: list[str] = Field(default_factory=list)
+    # If non-empty, only repos matching these patterns (fnmatch or exact owner/repo) are used.
+    repo_allowlist: list[str] = Field(default_factory=list)
+    # False = ignore repo_allowlist everywhere (discovery, hunt, target). Default True = enforce.
+    enforce_repo_allowlist: bool = True
+
+    def allows_repo(self, full_name: str) -> bool:
+        """True if allowlist enforcement is off, list empty, or full_name matches an entry."""
+        if not self.enforce_repo_allowlist:
+            return True
+        if not self.repo_allowlist:
+            return True
+        fn_lc = full_name.strip().lower()
+        for raw in self.repo_allowlist:
+            pat = (raw or "").strip().lower()
+            if not pat:
+                continue
+            if fn_lc == pat or fnmatch(fn_lc, pat):
+                return True
+        return False
 
 
 class StorageConfig(BaseModel):
@@ -207,6 +234,10 @@ class PipelineConfig(BaseModel):
     max_retries: int = 2  # middleware retry count
     min_quality_score: float = 5.0  # quality gate threshold
     human_review: bool = False  # pause for human approval before creating PRs
+    # Skip opening new PRs if we created one for this repo within the last N hours (0 = disabled).
+    repo_pr_cooldown_hours: float = 0.0
+    # If True and discovery.repo_allowlist is empty, log a warning on non-dry pipeline runs.
+    warn_when_live_without_repo_allowlist: bool = True
 
 
 class QuotaConfig(BaseModel):
