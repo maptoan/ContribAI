@@ -62,8 +62,12 @@ class LLMProvider(ABC):
         system: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        response_mime_type: str | None = None,
     ) -> str:
-        """Single-turn completion."""
+        """Single-turn completion.
+
+        response_mime_type: Gemini only — e.g. ``application/json`` for structured output.
+        """
 
     @abstractmethod
     async def chat(
@@ -73,6 +77,7 @@ class LLMProvider(ABC):
         system: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        response_mime_type: str | None = None,
     ) -> str:
         """Multi-turn chat completion."""
 
@@ -147,14 +152,18 @@ class GeminiProvider(LLMProvider):
         temperature: float,
         max_tok: int,
         use_model: str,
+        response_mime_type: str | None = None,
     ) -> str:
         from google.genai import types
 
-        cfg = types.GenerateContentConfig(
-            system_instruction=system,
-            temperature=temperature,
-            max_output_tokens=max_tok,
-        )
+        cfg_kwargs: dict[str, Any] = {
+            "system_instruction": system,
+            "temperature": temperature,
+            "max_output_tokens": max_tok,
+        }
+        if response_mime_type:
+            cfg_kwargs["response_mime_type"] = response_mime_type
+        cfg = types.GenerateContentConfig(**cfg_kwargs)
         response = client.models.generate_content(
             model=use_model,
             contents=prompt,
@@ -171,6 +180,7 @@ class GeminiProvider(LLMProvider):
         temperature: float,
         max_tok: int,
         use_model: str,
+        response_mime_type: str | None = None,
     ) -> str:
         from google.genai import types
 
@@ -179,11 +189,14 @@ class GeminiProvider(LLMProvider):
             role = "model" if msg["role"] == "assistant" else "user"
             contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
 
-        cfg = types.GenerateContentConfig(
-            system_instruction=system,
-            temperature=temperature,
-            max_output_tokens=max_tok,
-        )
+        cfg_kwargs: dict[str, Any] = {
+            "system_instruction": system,
+            "temperature": temperature,
+            "max_output_tokens": max_tok,
+        }
+        if response_mime_type:
+            cfg_kwargs["response_mime_type"] = response_mime_type
+        cfg = types.GenerateContentConfig(**cfg_kwargs)
         response = client.models.generate_content(
             model=use_model,
             contents=contents,
@@ -208,6 +221,7 @@ class GeminiProvider(LLMProvider):
         temperature: float,
         max_tok: int,
         use_model: str,
+        response_mime_type: str | None = None,
     ) -> str:
         assert self._pool is not None and self._client_cache is not None
         last_exc: Exception | None = None
@@ -241,6 +255,7 @@ class GeminiProvider(LLMProvider):
                             temperature=temperature,
                             max_tok=max_tok,
                             use_model=use_model,
+                            response_mime_type=response_mime_type,
                         )
                     else:
                         text = await asyncio.to_thread(
@@ -251,6 +266,7 @@ class GeminiProvider(LLMProvider):
                             temperature=temperature,
                             max_tok=max_tok,
                             use_model=use_model,
+                            response_mime_type=response_mime_type,
                         )
                 except Exception as e:
                     classified = classify_gemini_error(e)
@@ -278,6 +294,7 @@ class GeminiProvider(LLMProvider):
         temperature: float | None = None,
         max_tokens: int | None = None,
         model: str | None = None,
+        response_mime_type: str | None = None,
     ) -> str:
         await self._llm_spacing_wait()
         temp = temperature if temperature is not None else self.temperature
@@ -291,6 +308,7 @@ class GeminiProvider(LLMProvider):
                 temperature=temp,
                 max_tok=max_tok,
                 use_model=use_model,
+                response_mime_type=response_mime_type,
             )
         except Exception as e:
             self._map_gemini_exception(e)
@@ -304,6 +322,7 @@ class GeminiProvider(LLMProvider):
         temperature: float | None = None,
         max_tokens: int | None = None,
         model: str | None = None,
+        response_mime_type: str | None = None,
     ) -> str:
         await self._llm_spacing_wait()
         temp = temperature if temperature is not None else self.temperature
@@ -317,6 +336,7 @@ class GeminiProvider(LLMProvider):
                 temperature=temp,
                 max_tok=max_tok,
                 use_model=use_model,
+                response_mime_type=response_mime_type,
             )
         except Exception as e:
             error_msg = str(e).lower()
@@ -332,6 +352,7 @@ class GeminiProvider(LLMProvider):
         temperature: float | None = None,
         max_tokens: int | None = None,
         model: str | None = None,
+        response_mime_type: str | None = None,
     ) -> str:
         temp = temperature if temperature is not None else self.temperature
         max_tok = max_tokens if max_tokens is not None else self.max_tokens
@@ -345,6 +366,7 @@ class GeminiProvider(LLMProvider):
                 temperature=temp,
                 max_tok=max_tok,
                 use_model=use_model,
+                response_mime_type=response_mime_type,
             )
         return await self._single_complete(
             prompt,
@@ -352,6 +374,7 @@ class GeminiProvider(LLMProvider):
             temperature=temperature,
             max_tokens=max_tokens,
             model=model,
+            response_mime_type=response_mime_type,
         )
 
     async def chat(
@@ -362,6 +385,7 @@ class GeminiProvider(LLMProvider):
         temperature: float | None = None,
         max_tokens: int | None = None,
         model: str | None = None,
+        response_mime_type: str | None = None,
     ) -> str:
         temp = temperature if temperature is not None else self.temperature
         max_tok = max_tokens if max_tokens is not None else self.max_tokens
@@ -375,6 +399,7 @@ class GeminiProvider(LLMProvider):
                 temperature=temp,
                 max_tok=max_tok,
                 use_model=use_model,
+                response_mime_type=response_mime_type,
             )
         return await self._single_chat(
             messages,
@@ -382,6 +407,7 @@ class GeminiProvider(LLMProvider):
             temperature=temperature,
             max_tokens=max_tokens,
             model=model,
+            response_mime_type=response_mime_type,
         )
 
 
@@ -470,7 +496,9 @@ class AnthropicProvider(LLMProvider):
         system: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        response_mime_type: str | None = None,
     ) -> str:
+        _ = response_mime_type
         await self._llm_spacing_wait()
         temp = temperature if temperature is not None else self.temperature
         max_tok = max_tokens if max_tokens is not None else self.max_tokens
@@ -527,8 +555,10 @@ class OllamaProvider(LLMProvider):
         system: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        response_mime_type: str | None = None,
         **kwargs,
     ) -> str:
+        _ = response_mime_type
         await self._llm_spacing_wait()
         temp = temperature if temperature is not None else self.temperature
 
@@ -586,6 +616,7 @@ class MultiModelProvider(LLMProvider):
         temperature: float | None = None,
         max_tokens: int | None = None,
         model: str | None = None,
+        response_mime_type: str | None = None,
     ) -> str:
         if model is None:
             decision = self._router.route(
@@ -612,6 +643,7 @@ class MultiModelProvider(LLMProvider):
             temperature=temperature,
             max_tokens=max_tokens,
             model=model,
+            response_mime_type=response_mime_type,
         )
 
     async def chat(
@@ -622,6 +654,7 @@ class MultiModelProvider(LLMProvider):
         temperature: float | None = None,
         max_tokens: int | None = None,
         model: str | None = None,
+        response_mime_type: str | None = None,
     ) -> str:
         if model is None:
             decision = self._router.route(
@@ -641,6 +674,7 @@ class MultiModelProvider(LLMProvider):
             temperature=temperature,
             max_tokens=max_tokens,
             model=model,
+            response_mime_type=response_mime_type,
         )
 
     async def close(self):

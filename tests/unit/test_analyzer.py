@@ -189,6 +189,52 @@ findings:
         assert len(findings) == 0
 
 
+class TestParseFindingsJSON:
+    def test_parse_json_array_raw(self, analyzer, sample_repo):
+        response = (
+            '[{"title": "Bad origin", "severity": "high", "file_path": "main.go", '
+            '"line_start": 10, "description": "Use OPEN_3: \'#ffdc32\' for warnings", '
+            '"suggestion": "Set CheckOrigin properly"}]'
+        )
+        ctx = RepoContext(repo=sample_repo)
+        findings = analyzer._parse_findings(response, "security", ctx)
+        assert len(findings) == 1
+        assert "OPEN_3" in findings[0].description
+
+    def test_parse_json_fenced(self, analyzer, sample_repo):
+        response = """```json
+[{"title": "x", "severity": "medium", "file_path": "a.js", "description": "d"}]
+```"""
+        ctx = RepoContext(repo=sample_repo)
+        findings = analyzer._parse_findings(response, "ui_ux", ctx)
+        assert len(findings) == 1
+        assert findings[0].title == "x"
+
+    def test_parse_json_wrapped_findings_key(self, analyzer, sample_repo):
+        response = (
+            '{"findings": [{"title": "y", "severity": "low", '
+            '"file_path": "b.ts", "description": ""}]}'
+        )
+        ctx = RepoContext(repo=sample_repo)
+        findings = analyzer._parse_findings(response, "code_quality", ctx)
+        assert len(findings) == 1
+        assert findings[0].title == "y"
+
+    def test_parse_json_empty_array(self, analyzer, sample_repo):
+        ctx = RepoContext(repo=sample_repo)
+        assert len(analyzer._parse_findings("[]", "docs", ctx)) == 0
+
+    def test_parse_prefers_json_over_ambiguous(self, analyzer, sample_repo):
+        """JSON branch runs first; valid JSON array wins."""
+        response = (
+            '[{"title": "j", "severity": "critical", "file_path": "f.py", "description": ""}]'
+        )
+        ctx = RepoContext(repo=sample_repo)
+        findings = analyzer._parse_findings(response, "security", ctx)
+        assert len(findings) == 1
+        assert findings[0].severity == Severity.CRITICAL
+
+
 class TestAnalyzableExtensions:
     def test_python_is_analyzable(self):
         assert ".py" in ANALYZABLE_EXTENSIONS

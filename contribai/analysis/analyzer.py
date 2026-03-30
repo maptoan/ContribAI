@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
+import re
 import time
 import uuid
 from fnmatch import fnmatch
@@ -29,6 +31,136 @@ from contribai.github.client import GitHubClient
 from contribai.llm.provider import LLMProvider
 
 logger = logging.getLogger(__name__)
+
+# Gemini structured output for analyzer findings (google-genai GenerateContentConfig)
+_ANALYZER_RESPONSE_MIME_JSON = "application/json"
+
+
+def _strip_json_markdown_fences(text: str) -> str:
+    """Prefer fenced ```json blocks; else a first ``` block that looks like JSON."""
+    t = text.strip()
+    lower = t.lower()
+    if "```json" in lower:
+        i = lower.index("```json")
+        rest = t[i + 7 :]
+        end = rest.find("```")
+        if end >= 0:
+            return rest[:end].strip()
+    if "```" in t:
+        first = t.index("```")
+        rest = t[first + 3 :]
+        if rest.lower().lstrip().startswith("json"):
+            rest = rest.lstrip()[4:].lstrip()
+            if rest.startswith("\n"):
+                rest = rest[1:]
+        end = rest.find("```")
+        if end >= 0:
+            chunk = rest[:end].strip()
+            if chunk.startswith(("[", "{")):
+                return chunk
+    return t
+
+
+def _repair_trailing_commas_json(s: str) -> str:
+    out = s
+    prev = None
+    while prev != out:
+        prev = out
+        out = re.sub(r",(\s*[}\]])", r"\1", out)
+    return out
+
+
+def _extract_balanced_json(
+    s: str, open_ch: str, close_ch: str
+) -> str | None:
+    start = s.find(open_ch)
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    quote = ""
+    for i, c in enumerate(s[start:], start):
+        if in_string:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == quote:
+                in_string = False
+        else:
+            if c in "\"'":
+                in_string = True
+                quote = c
+            elif c == open_ch:
+                depth += 1
+            elif c == close_ch:
+                depth -= 1
+                if depth == 0:
+                    return s[start : i + 1]
+    return None
+
+
+def _try_decode_findings_json_blob(raw: str) -> list[dict] | None:
+    """Parse JSON array or {\"findings\": [...]}; return None if invalid."""
+    text = raw.strip()
+    if not text:
+        return []
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add(v: str) -> None:
+        v = v.strip()
+        if v and v not in seen:
+            seen.add(v)
+            candidates.append(v)
+
+    add(text)
+    add(_repair_trailing_commas_json(text))
+    arr = _extract_balanced_json(text, "[", "]")
+    if arr:
+        add(arr)
+        add(_repair_trailing_commas_json(arr))
+    obj = _extract_balanced_json(text, "{", "}")
+    if obj:
+        add(obj)
+        add(_repair_trailing_commas_json(obj))
+
+    for cand in candidates:
+        try:
+            data = json.loads(cand)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict) and "findings" in data:
+            data = data["findings"]
+        if not isinstance(data, list):
+            continue
+        return [x for x in data if isinstance(x, dict)]
+
+    return None
+
+
+def _try_parse_findings_yaml_block(response: str) -> list[dict] | None:
+    import yaml
+
+    try:
+        yaml_text = response
+        if "```yaml" in response:
+            yaml_text = response.split("```yaml", 1)[1].split("```", 1)[0]
+        elif "```" in response:
+            yaml_text = response.split("```", 1)[1].split("```", 1)[0]
+
+        parsed = yaml.safe_load(yaml_text)
+        if not parsed:
+            return []
+        items = parsed if isinstance(parsed, list) else parsed.get("findings", [])
+        if not isinstance(items, list):
+            return None
+        return [x for x in items if isinstance(x, dict)]
+    except Exception:
+        return None
+
 
 # File extensions we can meaningfully analyze
 ANALYZABLE_EXTENSIONS = {
@@ -503,7 +635,13 @@ class CodeAnalyzer:
             "- line_start: approximate line number (or 0 if unknown)\n"
             "- description: explain WHY this is a problem with concrete impact\n"
             "- suggestion: exact code-level fix (not vague advice)\n\n"
-            "Return findings as a YAML list. If no issues found, return 'findings: []'.\n\n"
+            "OUTPUT FORMAT (mandatory): Return ONLY valid JSON — a JSON array of objects, "
+            "one object per finding. Example: "
+            '[{"title":"...","severity":"high","file_path":"src/x.py","line_start":1,'
+            '"line_end":2,"description":"...","suggestion":"..."}]. '
+            "Use JSON strings for description/suggestion so colons and quotes in code snippets "
+            "do not break parsing. If no issues: []. "
+            "No markdown fences, no prose before or after the JSON.\n\n"
             f"{profile_ctx}"
             "ANTI-FALSE-POSITIVE RULES (mandatory checks before reporting):\n"
             "1. ALREADY HANDLED — Is the code already protected by try/except, "
@@ -522,7 +660,12 @@ class CodeAnalyzer:
         )
 
         try:
-            response = await self._llm.complete(prompt, system=system, temperature=0.2)
+            response = await self._llm.complete(
+                prompt,
+                system=system,
+                temperature=0.2,
+                response_mime_type=_ANALYZER_RESPONSE_MIME_JSON,
+            )
             return self._parse_findings(response, name, context)
         except Exception as e:
             logger.error("Analyzer %s failed: %s", name, e)
@@ -603,7 +746,7 @@ class CodeAnalyzer:
             "7. Missing form validation feedback\n"
             "8. Poor empty states\n"
             "NOTE: Only analyze if the repo contains frontend code (HTML/CSS/JS/React/Vue/etc). "
-            "If no frontend code found, return 'findings: []'.\n"
+            "If no frontend code found, return JSON: [].\n"
         )
 
     def _performance_prompt(self, ctx: RepoContext) -> str:
@@ -677,11 +820,10 @@ class CodeAnalyzer:
         return "\n\n".join(parts) if parts else "No source files available."
 
     def _parse_findings(self, response: str, analyzer_name: str, ctx: RepoContext) -> list[Finding]:
-        """Parse LLM response into Finding objects."""
-        import yaml
+        """Parse LLM response into Finding objects.
 
-        findings: list[Finding] = []
-
+        Order: JSON (fenced or heuristic) → YAML fallback for older prompts / non-Gemini runs.
+        """
         type_map = {
             "security": ContributionType.SECURITY_FIX,
             "code_quality": ContributionType.CODE_QUALITY,
@@ -693,24 +835,19 @@ class CodeAnalyzer:
         }
         contrib_type = type_map.get(analyzer_name, ContributionType.CODE_QUALITY)
 
-        try:
-            # Try to extract YAML from the response
-            yaml_text = response
-            if "```yaml" in response:
-                yaml_text = response.split("```yaml")[1].split("```")[0]
-            elif "```" in response:
-                yaml_text = response.split("```")[1].split("```")[0]
+        stripped = _strip_json_markdown_fences(response)
+        items = _try_decode_findings_json_blob(stripped)
+        if items is None:
+            items = _try_parse_findings_yaml_block(response)
 
-            parsed = yaml.safe_load(yaml_text)
-            if not parsed:
-                return []
-
-            items = parsed if isinstance(parsed, list) else parsed.get("findings", [])
-
+        findings: list[Finding] = []
+        if items is None:
+            logger.warning(
+                "Failed to parse %s findings (JSON and YAML both failed)",
+                analyzer_name,
+            )
+        else:
             for item in items:
-                if not isinstance(item, dict):
-                    continue
-
                 severity_str = str(item.get("severity", "medium")).lower()
                 try:
                     severity = Severity(severity_str)
@@ -730,8 +867,6 @@ class CodeAnalyzer:
                         suggestion=item.get("suggestion"),
                     )
                 )
-        except Exception as e:
-            logger.warning("Failed to parse %s findings: %s", analyzer_name, e)
 
         logger.info("Analyzer %s found %d issues", analyzer_name, len(findings))
         return findings
