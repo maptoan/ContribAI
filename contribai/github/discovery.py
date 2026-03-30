@@ -31,9 +31,12 @@ class RepoDiscovery:
         if criteria is None:
             criteria = self._criteria_from_config()
 
-        # Search GitHub
-        repos = await self._search(criteria)
-        logger.info("Search returned %d repositories", len(repos))
+        if self._config.discovery_source == "owner_repos":
+            repos = await self._discover_from_user_repos(criteria)
+            logger.info("Owner repo list returned %d repositories", len(repos))
+        else:
+            repos = await self._search(criteria)
+            logger.info("Search returned %d repositories", len(repos))
 
         # Filter for contribution-friendliness
         repos = await self._filter_contributable(repos, criteria)
@@ -57,12 +60,18 @@ class RepoDiscovery:
 
     def _criteria_from_config(self) -> DiscoveryCriteria:
         """Build criteria from configuration."""
+        min_days = (
+            0
+            if self._config.relaxed_filters
+            else self._config.min_last_activity_days
+        )
         return DiscoveryCriteria(
             languages=self._config.languages,
             stars_min=self._config.stars_range[0] if len(self._config.stars_range) > 0 else 50,
             stars_max=self._config.stars_range[1] if len(self._config.stars_range) > 1 else 10000,
-            min_last_activity_days=self._config.min_last_activity_days,
+            min_last_activity_days=min_days,
             require_contributing_guide=self._config.require_contributing_guide,
+            require_open_issues=not self._config.relaxed_filters,
             topics=self._config.topics,
         )
 
@@ -105,6 +114,19 @@ class RepoDiscovery:
 
         return unique
 
+    async def _discover_from_user_repos(self, criteria: DiscoveryCriteria) -> list[Repository]:
+        """Use GET /user/repos — avoids global search missing small personal repos."""
+        raw = await self._client.list_authenticated_user_repos(owner_only=True)
+        want_langs = {x.lower() for x in criteria.languages} if criteria.languages else set()
+        picked: list[Repository] = []
+        for repo in raw:
+            if want_langs:
+                lang = (repo.language or "").lower()
+                if lang and lang not in want_langs:
+                    continue
+            picked.append(repo)
+        return picked
+
     async def _filter_contributable(
         self, repos: list[Repository], criteria: DiscoveryCriteria
     ) -> list[Repository]:
@@ -112,8 +134,7 @@ class RepoDiscovery:
         filtered: list[Repository] = []
 
         for repo in repos:
-            # Skip if no open issues (may not welcome contributions)
-            if repo.open_issues == 0:
+            if criteria.require_open_issues and repo.open_issues == 0:
                 logger.debug("Skipping %s: no open issues", repo.full_name)
                 continue
 
@@ -125,8 +146,7 @@ class RepoDiscovery:
                     continue
                 repo.has_contributing = True
 
-            # Check last activity
-            if repo.last_push_at:
+            if criteria.min_last_activity_days > 0 and repo.last_push_at:
                 cutoff = datetime.now(UTC) - timedelta(days=criteria.min_last_activity_days)
                 if repo.last_push_at < cutoff:
                     logger.debug("Skipping %s: inactive", repo.full_name)

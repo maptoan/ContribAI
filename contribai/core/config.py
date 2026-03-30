@@ -173,6 +173,10 @@ class DiscoveryConfig(BaseModel):
     stars_range: list[int] = Field(default_factory=lambda: [50, 10000])
     min_last_activity_days: int = 30
     require_contributing_guide: bool = False
+    # True: no open-issues requirement & no activity window in discover (pair with allowlist).
+    relaxed_filters: bool = False
+    # search = global GitHub; owner_repos = /user/repos for the token (self-allowlist runs).
+    discovery_source: Literal["search", "owner_repos"] = "search"
     topics: list[str] = Field(default_factory=list)
     # If non-empty, only repos matching these patterns (fnmatch or exact owner/repo) are used.
     repo_allowlist: list[str] = Field(default_factory=list)
@@ -238,6 +242,8 @@ class PipelineConfig(BaseModel):
     repo_pr_cooldown_hours: float = 0.0
     # If True and discovery.repo_allowlist is empty, log a warning on non-dry pipeline runs.
     warn_when_live_without_repo_allowlist: bool = True
+    # Hunt: require a merged closed PR first. False = skip that check (e.g. new personal repos).
+    hunt_merge_history_gate: bool = True
 
 
 class QuotaConfig(BaseModel):

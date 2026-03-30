@@ -99,6 +99,10 @@ discovery:
   min_last_activity_days: 30
   require_contributing_guide: false
   topics: []
+  # true = không bắt open issues / không cửa sổ pushed (chỉ nên dùng với allowlist hẹp, vd. user/*).
+  relaxed_filters: false
+  # owner_repos = liệt kê repo của user (token); dùng với allowlist tk mình. search = tìm toàn GitHub.
+  discovery_source: search
   # Danh sách repo được phép (rỗng = không hạn chế). Dạng owner/repo hoặc fnmatch (vd: myorg/*).
   # Bật false để bỏ qua allowlist (hunt rộng) — vẫn có thể giữ repo_allowlist trong file.
   enforce_repo_allowlist: true
@@ -133,6 +137,8 @@ pipeline:
   repo_pr_cooldown_hours: 0
   # live discovery + repo_allowlist rỗng → log cảnh báo (tránh chạy rộng nhầm).
   warn_when_live_without_repo_allowlist: true
+  # Hunt: chỉ repo đã có PR merged. false = bỏ cổng này (repo/fork mới dưới allowlist).
+  hunt_merge_history_gate: true
 
 quota:
   github_daily_limit: 5000

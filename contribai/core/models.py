@@ -199,6 +199,8 @@ class DiscoveryCriteria(BaseModel):
     stars_max: int = 10000
     min_last_activity_days: int = 30
     require_contributing_guide: bool = False
+    # Skip repos with zero open issues when True (OSS default). False for self-owned allowlist runs.
+    require_open_issues: bool = True
     topics: list[str] = Field(default_factory=list)
     max_results: int = 20
     exclude_repos: list[str] = Field(default_factory=list)  # full_name list

@@ -464,12 +464,16 @@ class ContribPipeline:
                 hunt_langs = all_languages if rnd % 2 == 0 else langs
                 random.shuffle(hunt_langs)
                 stars = star_tiers[(rnd - 1) % len(star_tiers)]
+                disc = self.config.discovery
+                hunt_min_days = 0 if disc.relaxed_filters else disc.min_last_activity_days
                 criteria = DiscoveryCriteria(
                     languages=hunt_langs[:2],
                     stars_min=stars[0],
                     stars_max=stars[1],
-                    min_last_activity_days=7,
+                    min_last_activity_days=hunt_min_days,
                     max_results=10,
+                    require_open_issues=not disc.relaxed_filters,
+                    require_contributing_guide=disc.require_contributing_guide,
                 )
 
                 logger.info(
@@ -495,31 +499,39 @@ class ContribPipeline:
                         await asyncio.sleep(delay_sec)
                     continue
 
-                # Filter to merge-friendly repos
                 targets: list[Repository] = []
-                for repo in repos[:5]:
+                hunt_gate = self.config.pipeline.hunt_merge_history_gate
+                if hunt_gate:
+                    scan = min(5, len(repos))
+                else:
+                    cap = max(5, self.config.github.max_repos_per_run)
+                    scan = min(len(repos), cap)
+                for repo in repos[:scan]:
                     if await self._memory.has_analyzed(repo.full_name):
                         continue
-                    try:
-                        prs = await self._github.list_pull_requests(
-                            repo.owner,
-                            repo.name,
-                            state="closed",
-                            per_page=10,
-                        )
-                        merged = [p for p in prs if p.get("merged_at")]
-                        if merged:
-                            logger.info(
-                                "✅ %s — %d merged PRs, good target!",
-                                repo.full_name,
-                                len(merged),
+                    if hunt_gate:
+                        try:
+                            prs = await self._github.list_pull_requests(
+                                repo.owner,
+                                repo.name,
+                                state="closed",
+                                per_page=10,
                             )
-                            targets.append(repo)
-                    except Exception:
-                        pass
+                            merged = [p for p in prs if p.get("merged_at")]
+                            if merged:
+                                logger.info(
+                                    "✅ %s — %d merged PRs, good target!",
+                                    repo.full_name,
+                                    len(merged),
+                                )
+                                targets.append(repo)
+                        except Exception:
+                            pass
+                    else:
+                        targets.append(repo)
 
                 if not targets:
-                    logger.info("No merge-friendly repos this round")
+                    logger.info("No hunt targets this round")
                     if rnd < rounds:
                         await asyncio.sleep(delay_sec)
                     continue

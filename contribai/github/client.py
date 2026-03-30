@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import logging
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -201,6 +202,41 @@ class GitHubClient:
             params={"q": query, "sort": sort, "order": order, "per_page": per_page},
         )
         return [self._parse_repo(item) for item in data.get("items", [])]
+
+    async def list_authenticated_user_repos(
+        self,
+        *,
+        owner_only: bool = True,
+        per_page: int = 100,
+        max_pages: int = 10,
+    ) -> list[Repository]:
+        """List repositories for the token user via GET /user/repos.
+
+        ``owner_only=True`` uses ``type=owner`` (namespaced repos you own, including forks).
+        Skips archived repositories.
+        """
+        repo_type = "owner" if owner_only else "all"
+        out: list[Repository] = []
+        for page in range(1, max_pages + 1):
+            batch = await self._get(
+                "/user/repos",
+                params={
+                    "type": repo_type,
+                    "sort": "updated",
+                    "direction": "desc",
+                    "per_page": str(per_page),
+                    "page": str(page),
+                },
+            )
+            if not batch or not isinstance(batch, list):
+                break
+            for item in batch:
+                if item.get("archived"):
+                    continue
+                out.append(self._parse_repo(item))
+            if len(batch) < per_page:
+                break
+        return out
 
     async def get_repo_details(self, owner: str, repo: str) -> Repository:
         """Get detailed repository information."""
@@ -709,6 +745,13 @@ class GitHubClient:
     def _parse_repo(data: dict) -> Repository:
         """Parse raw API response into Repository model."""
         owner = data.get("owner", {})
+        last_push: datetime | None = None
+        raw_pushed = data.get("pushed_at")
+        if raw_pushed:
+            try:
+                last_push = datetime.fromisoformat(raw_pushed.replace("Z", "+00:00"))
+            except ValueError:
+                last_push = None
         return Repository(
             owner=owner.get("login", ""),
             name=data.get("name", ""),
@@ -723,4 +766,5 @@ class GitHubClient:
             html_url=data.get("html_url", ""),
             clone_url=data.get("clone_url", ""),
             has_license=data.get("license") is not None,
+            last_push_at=last_push,
         )

@@ -85,6 +85,15 @@ class TestFilterContributable:
         assert len(result) == 1
 
     @pytest.mark.asyncio
+    async def test_keeps_zero_issues_when_not_required(self, discovery):
+        repos = [make_repo("solo", open_issues=0)]
+        result = await discovery._filter_contributable(
+            repos,
+            DiscoveryCriteria(languages=["python"], require_open_issues=False),
+        )
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
     async def test_requires_contributing_guide(self, discovery):
         discovery._client.get_contributing_guide = AsyncMock(return_value=None)
         repos = [make_repo("no_guide", open_issues=5)]
@@ -107,6 +116,37 @@ class TestCriteriaFromConfig:
         assert criteria.languages == ["python"]
         assert criteria.stars_min == 100
         assert criteria.stars_max == 5000
+
+    def test_relaxed_filters_zero_activity_and_no_issue_requirement(self):
+        client = AsyncMock()
+        cfg = DiscoveryConfig(
+            languages=["python"],
+            stars_range=[100, 5000],
+            min_last_activity_days=90,
+            relaxed_filters=True,
+        )
+        d = RepoDiscovery(client=client, config=cfg)
+        c = d._criteria_from_config()
+        assert c.min_last_activity_days == 0
+        assert c.require_open_issues is False
+
+
+class TestOwnerReposSource:
+    @pytest.mark.asyncio
+    async def test_owner_repos_filters_language(self):
+        client = AsyncMock()
+        client.list_authenticated_user_repos = AsyncMock(
+            return_value=[
+                make_repo("py", language="Python"),
+                make_repo("js", language="JavaScript"),
+            ]
+        )
+        cfg = DiscoveryConfig(languages=["python"], discovery_source="owner_repos")
+        disc = RepoDiscovery(client=client, config=cfg)
+        crit = DiscoveryCriteria(languages=["python"], max_results=20)
+        out = await disc._discover_from_user_repos(crit)
+        assert len(out) == 1
+        assert out[0].name == "py"
 
 
 class TestAllowlistEnforcement:
